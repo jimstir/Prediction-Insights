@@ -34,3 +34,10 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+# Database Setup
+
+- Ensure a PostgreSQL database is available (Neon, Vercel Postgres, or a local instance).
+- Add a `DATABASE_URL` environment variable (e.g., `postgresql://USER:PASSWORD@HOST:5432/DATABASE?schema=public`).
+- For Neon migrations also provide a `DIRECT_URL`.
+- Run `npx prisma migrate dev --name init` to create the required tables.
+
