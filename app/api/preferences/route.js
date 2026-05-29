@@ -1,13 +1,30 @@
 import { NextResponse } from "next/server";
-import prisma from "../../lib/prisma";
+import { getPrisma } from "../../lib/prisma";
 import {
   normalizeWalletAddress,
   preferenceFieldsFromRecord,
   sanitizePreferencePayload,
 } from "../../lib/preferences";
 
+export const runtime = "nodejs";
+
+function databaseNotConfiguredResponse() {
+  return NextResponse.json(
+    {
+      error:
+        "Database is not configured. Add DATABASE_URL to your Vercel project environment variables.",
+    },
+    { status: 503 }
+  );
+}
+
 export async function GET(request) {
+  if (!process.env.DATABASE_URL) {
+    return databaseNotConfiguredResponse();
+  }
+
   try {
+    const prisma = getPrisma();
     const address = normalizeWalletAddress(
       request.nextUrl.searchParams.get("address")
     );
@@ -37,7 +54,12 @@ export async function GET(request) {
 }
 
 export async function PUT(request) {
+  if (!process.env.DATABASE_URL) {
+    return databaseNotConfiguredResponse();
+  }
+
   try {
+    const prisma = getPrisma();
     const body = await request.json();
     const address = normalizeWalletAddress(body?.address);
 

@@ -111,7 +111,6 @@ Recommendation LLM output (example):
 
 This approach produces a personalized market feed tailored to each user rather than a generic listing.
 
-
 ### 4. LLM / Agent Module
 
 The LLM / Agent Module (Somnia) is responsible for two primary inference types used by the UI widgets:
