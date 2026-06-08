@@ -29,16 +29,37 @@ model Wallet {
 
 /// Manages user interests and preferences for recommendations
 model Preference {
-  id              String   @id @default(uuid())
-  walletId        String   @unique
-  wallet          Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  id                String   @id @default(uuid())
+  walletId          String   @unique
+  wallet            Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
 
-  // Comma-separated values for SQLite, or String[] for PostgreSQL
-  categories      String   @default("")
-  subCategories   String   @default("")
-  tags            String   @default("")
-  liquidityScale  String   @default("")
-  timeframes      String   @default("")
+  // Explicit preferences (comma-separated)
+  categories        String   @default("")
+  subCategories     String   @default("")
+  tags              String   @default("")
+  liquidityScale    String   @default("")
+  timeframes        String   @default("")
+
+  // Inferred interests with scores (stored as JSON)
+  // { "topic": { "interest_score": float, "engagement_score": float, "skill_score": float } }
+  inferredInterests Json    @default("{}")
+
+  // Market settings preferences (stored as JSON)
+  marketSettings    Json    @default("{}")
+
+  // Performance metrics
+  wins              Int     @default(0)
+  losses            Int     @default(0)
+  popularMarkets    String  @default("") // Comma-separated market categories
+
+  // Timestamps
+  lastScoringUpdate DateTime @default(now()) @updatedAt
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  favorites         MarketFavorite[]
+  engagementHistory UserEngagement[]
 }
 
 /// Logs AI queries, analyzed markets, and reports generated
@@ -67,4 +88,103 @@ model SavedMarket {
   savedAt         DateTime @default(now())
 
   @@unique([walletId, slug]) // Prevent bookmarking the same market twice
+}
+
+/// Prediction market data from Kalshi API
+model Market {
+  id              String   @id @default(uuid())
+  kalshiId        String   @unique // Kalshi API ID (e.g., "BTCUSD-250630")
+  
+  title           String
+  subtitle        String?
+  category        String
+  subCategories   String   @default("") // Comma-separated
+  
+  marketType      String   @default("binary") // binary, scalar, sports, multi-outcome
+  timeHorizonDays Int
+  resolutionDate  DateTime
+  resolutionType  String   @default("event")
+  
+  // Metrics
+  difficulty      Float   @default(0.5) // 0-1 scale
+  volatility      Float   @default(0.5) // 0-1 scale
+  liquidity       Float   @default(0.5) // 0-1 scale
+  
+  // Embedding vector (stored as array of floats)
+  embedding       Json?   // [0.028, -0.194, 0.338, ...]
+  
+  // Status
+  status          String   @default("open") // open, closed, resolved
+  
+  // Kalshi URL
+  kalshiUrl       String?
+  
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relations
+  favorites       MarketFavorite[]
+  engagements     UserEngagement[]
+  similarMarkets  SimilarMarket[]  @relation("market_i")
+  relatedMarkets  SimilarMarket[]  @relation("market_j")
+}
+
+/// Market relationships (markets with similar resolutions)
+model SimilarMarket {
+  id              String   @id @default(uuid())
+  
+  marketIId       String
+  marketI         Market   @relation("market_i", fields: [marketIId], references: [id], onDelete: Cascade)
+  
+  marketJId       String
+  marketJ         Market   @relation("market_j", fields: [marketJId], references: [id], onDelete: Cascade)
+  
+  isSameOutcome   Boolean  @default(false)
+  confidence      Float    @default(0.0) // 0-1 scale
+  rationale       String   @default("")
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@unique([marketIId, marketJId]) // Prevent duplicate pairs
+}
+
+/// User's favorite markets
+model MarketFavorite {
+  id              String   @id @default(uuid())
+  walletId        String
+  preference      Preference @relation(fields: [walletId], references: [walletId], onDelete: Cascade)
+  
+  marketId        String
+  market          Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  
+  addedAt         DateTime @default(now())
+  
+  @@unique([walletId, marketId]) // Prevent duplicate favorites
+}
+
+/// User engagement tracking for profile scoring
+model UserEngagement {
+  id              String   @id @default(uuid())
+  walletId        String
+  preference      Preference @relation(fields: [walletId], references: [walletId], onDelete: Cascade)
+  
+  marketId        String
+  market          Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  
+  // Engagement metrics
+  clickCount      Int     @default(0)     // Number of times user viewed market details
+  timeSpentMs     Int     @default(0)     // Total time spent viewing market (milliseconds)
+  isWatchlisted   Boolean @default(false) // Added to watchlist
+  tradeExposure   Float   @default(0.0)   // Amount bet on this market (if applicable)
+  
+  // Interaction type tracking
+  interactionType String  @default("view") // view, click, watchlist, trade
+  
+  // Timestamps
+  firstInteraction DateTime @default(now())
+  lastInteraction DateTime @default(now()) @updatedAt
+  
+  @@unique([walletId, marketId]) // One engagement record per user per market
 }

@@ -107,7 +107,7 @@ export default function ProfileWidget({ walletAddress, onDisconnect, onConnectCl
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
               <circle cx="12" cy="7" r="4" />
             </svg>
-            Polymarket Profile
+            Profile
           </div>
         </div>
         <div className="widget-content empty-state">
@@ -169,7 +169,7 @@ export default function ProfileWidget({ walletAddress, onDisconnect, onConnectCl
             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
             <circle cx="12" cy="7" r="4" />
           </svg>
-          Polymarket Profile
+          Profile
         </div>
         <button className="btn-disconnect" onClick={onDisconnect}>
           Disconnect

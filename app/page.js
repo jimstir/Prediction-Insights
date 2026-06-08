@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import ProfileWidget from "./components/ProfileWidget";
 import RecommendationsWidget from "./components/RecommendationsWidget";
 import PositionsWidget from "./components/PositionsWidget";
-import InsightsWidget from "./components/InsightsWidget";
 import ConnectWalletModal from "./components/ConnectWalletModal";
 import SettingsModal, { EMPTY_PREFERENCES } from "./components/SettingsModal";
 
@@ -144,7 +143,7 @@ export default function Home() {
 
       {/* Grid Layout: 2 Rows */}
       <main className="dashboard-grid">
-        {/* Row 1, Column 1: Polymarket Profile Widget */}
+        {/* Top row: Profile (left) and Open Positions (right) */}
         <section className="widget-wrapper glass-card">
           <ProfileWidget 
             walletAddress={walletAddress} 
@@ -153,16 +152,6 @@ export default function Home() {
           />
         </section>
 
-        {/* Row 1, Column 2: Recommendations Widget */}
-        <section className="widget-wrapper glass-card">
-          <RecommendationsWidget
-            walletAddress={walletAddress}
-            preferences={preferences}
-            onConnectClick={() => setIsWalletModalOpen(true)}
-          />
-        </section>
-
-        {/* Row 2, Column 1: Open Positions Widget */}
         <section className="widget-wrapper glass-card">
           <PositionsWidget 
             walletAddress={walletAddress}
@@ -170,9 +159,13 @@ export default function Home() {
           />
         </section>
 
-        {/* Row 2, Column 2: AI Insights & Explorer Widget */}
-        <section className="widget-wrapper glass-card">
-          <InsightsWidget />
+        {/* Recommendations spanning full width below */}
+        <section className="widget-wrapper glass-card" style={{ gridColumn: '1 / -1' }}>
+          <RecommendationsWidget
+            walletAddress={walletAddress}
+            preferences={preferences}
+            onConnectClick={() => setIsWalletModalOpen(true)}
+          />
         </section>
       </main>
 

@@ -107,13 +107,18 @@ export async function submitSomniaInference(signedTx) {
 }
 
 /**
- * Full flow: build calldata → sign tx → POST to Somnia inference API.
+ * Full flow: fetch candidates + build calldata → sign tx → POST to Somnia inference API.
  */
 export async function runSomniaRecommendationsInference(context = {}) {
-  const calldata = buildRecommendationsInferenceCalldata(context);
+  // Build calldata (now async - fetches Kalshi candidates and user preferences)
+  const calldata = await buildRecommendationsInferenceCalldata(context);
+  
+  // Sign the transaction
   const signedTx = await signSomniaInferenceTransaction(
     calldata,
     context.walletAddress
   );
+  
+  // Submit to Somnia inference API
   return submitSomniaInference(signedTx);
 }

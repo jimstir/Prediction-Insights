@@ -59,7 +59,7 @@ The RECOMMENDED format of the `profile-schema` is as follows:
     "macro": int
  },
 
-  // Calculated after each recommendation list
+  // Calculated after each recommendation request
   "inferred_interests": {
     "topic": {
       "interest_score": int,
@@ -180,9 +180,10 @@ The prediction market data REQUIRED for a user to receive recommendations are:
 - Current open trades on the prediction market, as this can help prevent displaying twice
 
 An example API connection from the Polymarket API documentation is the user's public profile.
-For more information see, [Polymarket Gamma API](https://gamma-api.polymarket.com).
+For more information see, [Kalshi Predictions API](https://docs.kalshi.com/api-reference).
 
-> `GET https://gamma-api.polymarket.com/public-profile`
+> `curl --request GET \
+  --url 'https://external-api.kalshi.com/trade-api/v2/events?limit=200'`
 
 ### Market Schema
 
@@ -375,7 +376,6 @@ Copyright and related rights waived via [CC0](https://creativecommons.org/public
 
 ## References
 
-- [Polymarket Gamma API](https://gamma-api.polymarket.com)
-- [Polymarket Data API](https://data-api.polymarket.com)
+- [Kalshi Predictions API](https://docs.kalshi.com/api-reference)
 - [Semantic Trading: Agentic AI for Clustering and Relationship Discovery in Prediction Markets](https://arxiv.org/abs/2512.02436)
 - [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004)
