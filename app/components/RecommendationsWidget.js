@@ -2,11 +2,20 @@
 
 import { useState, useEffect, useRef } from "react";
 import { runSomniaRecommendationsInference } from "../lib/somnia/runLlmInference";
+import { getSomniaInferenceTxSummary } from "../lib/somnia/inferenceSummary";
+import {
+  canSignSomniaTransactions,
+  formatWalletError,
+  WALLET_MODES,
+} from "../lib/wallet/ethereum";
 import MarketItem from "./MarketItem";
 import SimilarMarketsModal from "./SimilarMarketsModal";
 
+const txSummary = getSomniaInferenceTxSummary();
+
 export default function RecommendationsWidget({
   walletAddress,
+  walletMode,
   onConnectClick,
   preferences,
 }) {
@@ -114,10 +123,15 @@ export default function RecommendationsWidget({
       return;
     }
 
-    if (typeof window === "undefined" || !window.ethereum) {
+    if (!canSignSomniaTransactions(walletMode)) {
       setUpdateError(
-        "No Web3 wallet detected. Use a browser extension wallet on Somnia."
+        walletMode === WALLET_MODES.READ_ONLY
+          ? "Reconnect with MetaMask to sign Somnia transactions. Read-only addresses cannot invoke the LLM."
+          : "Connect with MetaMask to sign Somnia transactions on mainnet."
       );
+      if (walletMode !== WALLET_MODES.READ_ONLY) {
+        onConnectClick?.();
+      }
       return;
     }
 
@@ -240,7 +254,9 @@ export default function RecommendationsWidget({
     } catch (err) {
       console.error("Somnia LLM inference failed:", err);
       setUpdateError(
-        err?.message || "Failed to run Somnia LLM inference. Try again."
+        formatWalletError(err) ||
+          err?.message ||
+          "Failed to run Somnia LLM inference. Try again."
       );
     } finally {
       setIsUpdating(false);
@@ -268,13 +284,34 @@ export default function RecommendationsWidget({
           className="btn-update"
           onClick={handleUpdate}
           disabled={isUpdating}
-          title="Sign a Somnia transaction to refresh recommendations via on-chain LLM"
+          title={
+            canSignSomniaTransactions(walletMode)
+              ? `Sign on ${txSummary.chainName} (chain ${txSummary.chainId}) — deposit ${txSummary.depositEth} ${txSummary.currency}`
+              : "Connect with MetaMask to sign Somnia LLM transactions"
+          }
         >
           {isUpdating ? "Signing…" : "Update"}
         </button>
       </div>
 
       <div className="widget-content recommendations-container">
+        {walletAddress && walletMode === WALLET_MODES.READ_ONLY && (
+          <div className="inference-banner read-only">
+            Read-only wallet — connect with MetaMask to run on-chain recommendations.
+          </div>
+        )}
+
+        {canSignSomniaTransactions(walletMode) && (
+          <div className="inference-banner tx-info">
+            Update signs a <strong>{txSummary.chainName}</strong> transaction (chain{" "}
+            {txSummary.chainId}) with a{" "}
+            <strong>
+              {txSummary.depositEth} {txSummary.currency}
+            </strong>{" "}
+            deposit via MetaMask.
+          </div>
+        )}
+
         {updateError && (
           <div className="inference-banner error">{updateError}</div>
         )}
@@ -397,6 +434,22 @@ export default function RecommendationsWidget({
           color: var(--color-danger);
           background: rgba(255, 51, 102, 0.08);
           border: 1px solid rgba(255, 51, 102, 0.25);
+        }
+
+        .inference-banner.read-only {
+          color: var(--color-warning);
+          background: rgba(255, 183, 3, 0.08);
+          border: 1px solid rgba(255, 183, 3, 0.25);
+        }
+
+        .inference-banner.tx-info {
+          color: var(--text-secondary);
+          background: rgba(0, 242, 254, 0.06);
+          border: 1px solid rgba(0, 242, 254, 0.2);
+        }
+
+        .inference-banner.tx-info strong {
+          color: var(--accent-cyan);
         }
 
         .recommendations-container {

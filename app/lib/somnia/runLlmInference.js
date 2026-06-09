@@ -1,4 +1,11 @@
-import { createWalletClient, custom, parseEther, createPublicClient, http } from "viem";
+import {
+  createWalletClient,
+  custom,
+  parseEther,
+  createPublicClient,
+  http,
+  decodeEventLog,
+} from "viem";
 import { buildRecommendationsInferenceCalldata } from "./buildRecommendationsInference";
 import { somniaChain } from "./chain";
 import {
@@ -6,55 +13,22 @@ import {
   SOMNIA_INFERENCE_GAS_LIMIT,
   SOMNIA_AGENTS_PLATFORM_ADDRESS,
   SOMNIA_LLM_AGENT_ID,
-  SOMNIA_RECEIPTS_SERVICE_URL,
-  SOMNIA_RECEIPTS_SERVICE_MAINNET_URL,
 } from "./constants";
+import { ensureSomniaNetwork, getReceiptsServiceUrl } from "./network";
 import { SOMNIA_AGENTS_PLATFORM_ABI } from "./platformAbi";
+import {
+  assertAccountMatches,
+  formatWalletError,
+  getConnectedAccount,
+  requireMetaMaskProvider,
+} from "../wallet/ethereum";
 
-function getEthereumProvider() {
-  if (typeof window === "undefined" || !window.ethereum) {
-    throw new Error(
-      "No Web3 wallet found. Connect a browser wallet that supports Somnia."
-    );
-  }
-  return window.ethereum;
-}
-
-function chainIdHex(chainId) {
-  return `0x${chainId.toString(16)}`;
-}
-
-async function ensureSomniaNetwork() {
-  const provider = getEthereumProvider();
-  const chainIdHexValue = chainIdHex(somniaChain.id);
-
-  try {
-    await provider.request({
-      method: "wallet_switchEthereumChain",
-      params: [{ chainId: chainIdHexValue }],
-    });
-  } catch (switchError) {
-    if (switchError?.code === 4902) {
-      await provider.request({
-        method: "wallet_addEthereumChain",
-        params: [
-          {
-            chainId: chainIdHexValue,
-            chainName: somniaChain.name,
-            nativeCurrency: somniaChain.nativeCurrency,
-            rpcUrls: somniaChain.rpcUrls.default.http,
-            blockExplorerUrls: [somniaChain.blockExplorers.default.url],
-          },
-        ],
-      });
-      return;
-    }
-    throw switchError;
-  }
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function createConnectedWalletClient() {
-  const provider = getEthereumProvider();
+  const provider = requireMetaMaskProvider();
   const walletClient = createWalletClient({
     chain: somniaChain,
     transport: custom(provider),
@@ -63,7 +37,7 @@ async function createConnectedWalletClient() {
   if (!account) {
     throw new Error("Wallet did not return an account.");
   }
-  return { walletClient, account };
+  return { walletClient, account: account.toLowerCase() };
 }
 
 function createPublicClientForChain() {
@@ -75,81 +49,117 @@ function createPublicClientForChain() {
 
 /**
  * Sends a createRequest transaction to the SomniaAgents platform contract.
- * This replaces the old API-based approach with proper on-chain smart contract calls.
  */
 export async function sendSomniaInferenceTransaction(
   encodedPayload,
   callbackSelector,
-  accountOverride
+  expectedAddress
 ) {
-  await ensureSomniaNetwork();
+  const provider = requireMetaMaskProvider();
+  await ensureSomniaNetwork(provider, somniaChain);
   const { walletClient, account } = await createConnectedWalletClient();
-  const from = accountOverride ?? account;
 
-  const hash = await walletClient.writeContract({
-    account: from,
-    address: SOMNIA_AGENTS_PLATFORM_ADDRESS,
-    abi: SOMNIA_AGENTS_PLATFORM_ABI,
-    functionName: "createRequest",
-    args: [BigInt(SOMNIA_LLM_AGENT_ID), encodedPayload, callbackSelector],
-    value: parseEther(SOMNIA_REQUEST_DEPOSIT_ETH),
-    gas: SOMNIA_INFERENCE_GAS_LIMIT,
-  });
+  assertAccountMatches(expectedAddress, account);
 
-  return hash;
+  try {
+    const hash = await walletClient.writeContract({
+      account,
+      address: SOMNIA_AGENTS_PLATFORM_ADDRESS,
+      abi: SOMNIA_AGENTS_PLATFORM_ABI,
+      functionName: "createRequest",
+      args: [BigInt(SOMNIA_LLM_AGENT_ID), encodedPayload, callbackSelector],
+      value: parseEther(SOMNIA_REQUEST_DEPOSIT_ETH),
+      gas: SOMNIA_INFERENCE_GAS_LIMIT,
+    });
+
+    return hash;
+  } catch (error) {
+    const walletError = new Error(formatWalletError(error));
+    walletError.cause = error;
+    throw walletError;
+  }
 }
 
 /**
- * Listens for RequestCreated event to get the requestId.
+ * Waits for the transaction receipt and extracts requestId from RequestCreated.
  */
 export async function waitForRequestCreated(transactionHash) {
   const publicClient = createPublicClientForChain();
-  
+
   const receipt = await publicClient.waitForTransactionReceipt({
     hash: transactionHash,
   });
 
-  // Find RequestCreated event in logs
-  const requestCreatedEvent = receipt.logs.find((log) => {
+  for (const log of receipt.logs) {
     try {
-      const decoded = publicClient.decodeEventLog({
+      const decoded = decodeEventLog({
         abi: SOMNIA_AGENTS_PLATFORM_ABI,
         eventName: "RequestCreated",
         data: log.data,
         topics: log.topics,
       });
-      return decoded !== null;
-    } catch {
-      return false;
-    }
-  });
 
-  if (!requestCreatedEvent) {
-    throw new Error("RequestCreated event not found in transaction receipt");
+      return {
+        requestId: decoded.args.requestId,
+        blockNumber: receipt.blockNumber,
+      };
+    } catch {
+      continue;
+    }
   }
 
-  const decoded = publicClient.decodeEventLog({
-    abi: SOMNIA_AGENTS_PLATFORM_ABI,
-    eventName: "RequestCreated",
-    data: requestCreatedEvent.data,
-    topics: requestCreatedEvent.topics,
-  });
+  throw new Error("RequestCreated event not found in transaction receipt");
+}
 
-  return decoded.requestId;
+/**
+ * Polls for RequestFinalized before fetching receipts.
+ */
+export async function waitForRequestFinalized(
+  requestId,
+  fromBlock,
+  { timeoutMs = 120000, pollIntervalMs = 3000 } = {}
+) {
+  const publicClient = createPublicClientForChain();
+  const deadline = Date.now() + timeoutMs;
+  const id = BigInt(requestId);
+
+  while (Date.now() < deadline) {
+    const logs = await publicClient.getContractEvents({
+      address: SOMNIA_AGENTS_PLATFORM_ADDRESS,
+      abi: SOMNIA_AGENTS_PLATFORM_ABI,
+      eventName: "RequestFinalized",
+      args: { requestId: id },
+      fromBlock,
+      toBlock: "latest",
+    });
+
+    if (logs.length > 0) {
+      return logs[0];
+    }
+
+    await sleep(pollIntervalMs);
+  }
+
+  console.warn(
+    "RequestFinalized not observed within timeout; attempting receipts fetch anyway."
+  );
+  return null;
 }
 
 /**
  * Fetches receipts for a given requestId from Somnia receipts service.
  */
 export async function fetchSomniaReceipts(requestId) {
-  const receiptsUrl =
-    somniaChain.id === 50312
-      ? SOMNIA_RECEIPTS_SERVICE_URL
-      : SOMNIA_RECEIPTS_SERVICE_MAINNET_URL;
+  const receiptsUrl = getReceiptsServiceUrl(somniaChain.id);
 
-  const response = await fetch(
-    `${receiptsUrl}?contractAddress=${SOMNIA_AGENTS_PLATFORM_ADDRESS}&requestId=${requestId}`
-  );
+  let response;
+  try {
+    response = await fetch(
+      `${receiptsUrl}?contractAddress=${SOMNIA_AGENTS_PLATFORM_ADDRESS}&requestId=${requestId}`
+    );
+  } catch (error) {
+    throw new Error(`Failed to fetch receipts: ${error.message}`);
+  }
 
   if (!response.ok) {
     throw new Error(
@@ -158,8 +168,7 @@ export async function fetchSomniaReceipts(requestId) {
   }
 
   const manifest = await response.json();
-  
-  // Fetch individual receipt URLs from manifest
+
   const receipts = [];
   if (manifest.urls && Array.isArray(manifest.urls)) {
     for (const url of manifest.urls) {
@@ -179,8 +188,36 @@ export async function fetchSomniaReceipts(requestId) {
 }
 
 /**
+ * Retries receipts fetch until LLM output is available or attempts are exhausted.
+ */
+export async function fetchSomniaReceiptsWithRetry(
+  requestId,
+  { maxAttempts = 12, delayMs = 5000 } = {}
+) {
+  let lastError;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const receipts = await fetchSomniaReceipts(requestId);
+      if (receipts.length > 0) {
+        extractLLMResponseFromReceipts(receipts);
+        return receipts;
+      }
+      lastError = new Error("Receipt manifest returned no receipt documents yet.");
+    } catch (error) {
+      lastError = error;
+    }
+
+    if (attempt < maxAttempts - 1) {
+      await sleep(delayMs);
+    }
+  }
+
+  throw lastError || new Error("Failed to fetch Somnia receipts.");
+}
+
+/**
  * Extracts the LLM response from receipts.
- * Looks for the llm_response step output in the agentReceipt.
  */
 export function extractLLMResponseFromReceipts(receipts) {
   for (const receipt of receipts) {
@@ -198,37 +235,38 @@ export function extractLLMResponseFromReceipts(receipts) {
 }
 
 /**
- * Full flow: build calldata → send createRequest transaction → wait for RequestCreated → fetch receipts → extract LLM response.
+ * Full flow: build calldata → MetaMask tx → wait for events → fetch receipts.
  */
 export async function runSomniaRecommendationsInference(context = {}) {
-  // Build calldata (async - fetches Kalshi candidates and user preferences)
+  const connectedAccount = await getConnectedAccount();
+  if (!connectedAccount) {
+    throw new Error(
+      "Connect with MetaMask to sign Somnia transactions. Read-only addresses cannot invoke the LLM."
+    );
+  }
+
+  assertAccountMatches(context.walletAddress, connectedAccount);
+
   const { encodedPayload, callbackSelector } =
     await buildRecommendationsInferenceCalldata(context);
 
-  // Send createRequest transaction to platform contract
   const txHash = await sendSomniaInferenceTransaction(
     encodedPayload,
     callbackSelector,
     context.walletAddress
   );
 
-  // Wait for RequestCreated event to get requestId
-  const requestId = await waitForRequestCreated(txHash);
+  const { requestId, blockNumber } = await waitForRequestCreated(txHash);
 
-  // Wait for consensus and finalization (typically 30-60 seconds)
-  // In production, this should poll for RequestFinalized event
-  await new Promise((resolve) => setTimeout(resolve, 45000));
+  await waitForRequestFinalized(requestId, blockNumber);
 
-  // Fetch receipts from Somnia receipts service
-  const receipts = await fetchSomniaReceipts(requestId);
-
-  // Extract LLM response from receipts
+  const receipts = await fetchSomniaReceiptsWithRetry(requestId);
   const llmResponse = extractLLMResponseFromReceipts(receipts);
 
   return {
     response: llmResponse,
     requestId: requestId.toString(),
     transactionHash: txHash,
-    receipts: receipts,
+    receipts,
   };
 }

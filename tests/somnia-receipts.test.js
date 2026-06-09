@@ -3,6 +3,7 @@
  * Tests fetching, parsing, and extracting data from Somnia receipts
  */
 
+import { describe, expect, it, vi } from "vitest";
 import {
   fetchSomniaReceipts,
   extractLLMResponseFromReceipts,
@@ -50,7 +51,7 @@ describe("Somnia Receipts Access", () => {
 
     it("should handle failed HTTP responses", async () => {
       // Mock a failed fetch
-      global.fetch = jest.fn(() =>
+      global.fetch = vi.fn(() =>
         Promise.resolve({
           ok: false,
           status: 404,
@@ -65,10 +66,10 @@ describe("Somnia Receipts Access", () => {
 
     it("should handle network errors", async () => {
       // Mock a network error
-      global.fetch = jest.fn(() => Promise.reject(new Error("Network error")));
+      global.fetch = vi.fn(() => Promise.reject(new Error("Network error")));
 
       await expect(fetchSomniaReceipts(mockRequestId)).rejects.toThrow(
-        "Failed to fetch receipts"
+        /Failed to fetch receipts/
       );
     });
   });

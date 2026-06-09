@@ -1,9 +1,14 @@
 import { defineChain } from "viem";
 import { SOMNIA_CHAIN_ID } from "./constants";
+import {
+  isSomniaTestnet,
+  SOMNIA_MAINNET_CHAIN_ID,
+  SOMNIA_TESTNET_CHAIN_ID,
+} from "./network";
 
 export const somniaChain = defineChain({
   id: SOMNIA_CHAIN_ID,
-  name: SOMNIA_CHAIN_ID === 50312 ? "Somnia Testnet" : "Somnia Mainnet",
+  name: isSomniaTestnet(SOMNIA_CHAIN_ID) ? "Somnia Testnet" : "Somnia Mainnet",
   nativeCurrency: {
     name: "SOMI",
     symbol: "SOMI",
@@ -12,7 +17,7 @@ export const somniaChain = defineChain({
   rpcUrls: {
     default: {
       http: [
-        SOMNIA_CHAIN_ID === 50312
+        isSomniaTestnet(SOMNIA_CHAIN_ID)
           ? "https://api.testnet.somnia.network/"
           : "https://api.infra.mainnet.somnia.network/",
       ],
@@ -21,10 +26,11 @@ export const somniaChain = defineChain({
   blockExplorers: {
     default: {
       name: "Somnia Explorer",
-      url:
-        SOMNIA_CHAIN_ID === 50312
-          ? "https://explorer.testnet.somnia.network"
-          : "https://explorer.somnia.network",
+      url: isSomniaTestnet(SOMNIA_CHAIN_ID)
+        ? "https://explorer.testnet.somnia.network"
+        : "https://explorer.somnia.network",
     },
   },
 });
+
+export { SOMNIA_MAINNET_CHAIN_ID, SOMNIA_TESTNET_CHAIN_ID };

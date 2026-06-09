@@ -12,6 +12,36 @@ function createPrismaClient(connectionString) {
  * Returns the Prisma client. Created lazily on first use so `next build`
  * does not require DATABASE_URL at compile/collect-page-data time.
  */
+const PRISMA_UNREACHABLE_CODES = new Set([
+  "ECONNREFUSED",
+  "ENOTFOUND",
+  "ETIMEDOUT",
+  "P1000",
+  "P1001",
+  "P1002",
+  "P1017",
+]);
+
+export function isDatabaseConfigured() {
+  return Boolean(process.env.DATABASE_URL);
+}
+
+export function isDatabaseUnreachable(error) {
+  if (!error) {
+    return false;
+  }
+
+  if (PRISMA_UNREACHABLE_CODES.has(error.code)) {
+    return true;
+  }
+
+  const message = error.message || "";
+  return (
+    message.includes("ECONNREFUSED") ||
+    message.includes("Can't reach database server")
+  );
+}
+
 export function getPrisma() {
   if (globalForPrisma.prisma) {
     return globalForPrisma.prisma;

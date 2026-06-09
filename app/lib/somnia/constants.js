@@ -1,6 +1,6 @@
 /** Somnia mainnet LLM inference defaults — override via env when needed. */
 export const SOMNIA_CHAIN_ID = Number(
-  process.env.NEXT_PUBLIC_SOMNIA_CHAIN_ID ?? "50312"
+  process.env.NEXT_PUBLIC_SOMNIA_CHAIN_ID ?? "5031"
 );
 
 /** SomniaAgents platform contract address (for createRequest calls) */

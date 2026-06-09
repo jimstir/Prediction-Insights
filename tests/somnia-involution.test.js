@@ -3,6 +3,7 @@
  * Tests the complete flow of invoking Somnia LLM inference for recommendations
  */
 
+import { describe, expect, it } from "vitest";
 import {
   runSomniaRecommendationsInference,
   sendSomniaInferenceTransaction,
@@ -77,22 +78,10 @@ describe("Somnia LLM Invocation", () => {
   });
 
   describe("waitForRequestCreated", () => {
-    it("should extract requestId from transaction receipt", async () => {
-      // This test requires a real transaction
-      // Skip in CI environments
-      if (process.env.CI) {
-        return;
-      }
-
-      const mockTxHash = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
-
-      try {
-        const requestId = await waitForRequestCreated(mockTxHash);
-        expect(requestId).toBeDefined();
-      } catch (error) {
-        // Expected to fail with mock transaction hash
-        console.log("Expected error with mock transaction:", error.message);
-      }
+    it.skip("requires a real Somnia transaction hash on mainnet/testnet", async () => {
+      const mockTxHash =
+        "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
+      await waitForRequestCreated(mockTxHash);
     });
   });
 

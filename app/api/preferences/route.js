@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { getPrisma } from "../../lib/prisma";
+import {
+  getPrisma,
+  isDatabaseConfigured,
+  isDatabaseUnreachable,
+} from "../../lib/prisma";
 import {
   normalizeWalletAddress,
   preferenceFieldsFromRecord,
@@ -8,33 +12,37 @@ import {
 
 export const runtime = "nodejs";
 
-function databaseNotConfiguredResponse() {
+function emptyPreferencesResponse(warning, status = 200) {
   return NextResponse.json(
     {
-      error:
-        "Database is not configured. Add DATABASE_URL to your Vercel project environment variables.",
+      preferences: preferenceFieldsFromRecord(null),
+      configured: false,
+      warning,
     },
-    { status: 503 }
+    { status }
   );
 }
 
 export async function GET(request) {
-  if (!process.env.DATABASE_URL) {
-    return databaseNotConfiguredResponse();
+  if (!isDatabaseConfigured()) {
+    return emptyPreferencesResponse(
+      "Database is not configured. Preferences will use defaults until DATABASE_URL is set."
+    );
+  }
+
+  const address = normalizeWalletAddress(
+    request.nextUrl.searchParams.get("address")
+  );
+
+  if (!address) {
+    return NextResponse.json(
+      { error: "A valid wallet address is required" },
+      { status: 400 }
+    );
   }
 
   try {
     const prisma = getPrisma();
-    const address = normalizeWalletAddress(
-      request.nextUrl.searchParams.get("address")
-    );
-
-    if (!address) {
-      return NextResponse.json(
-        { error: "A valid wallet address is required" },
-        { status: 400 }
-      );
-    }
 
     const wallet = await prisma.wallet.findUnique({
       where: { address },
@@ -43,9 +51,17 @@ export async function GET(request) {
 
     return NextResponse.json({
       preferences: preferenceFieldsFromRecord(wallet?.preferences),
+      configured: true,
     });
   } catch (error) {
     console.error("GET /api/preferences error:", error);
+
+    if (isDatabaseUnreachable(error)) {
+      return emptyPreferencesResponse(
+        "Database is unreachable. Start Postgres or check DATABASE_URL."
+      );
+    }
+
     return NextResponse.json(
       { error: "Failed to load preferences" },
       { status: 500 }
@@ -54,8 +70,11 @@ export async function GET(request) {
 }
 
 export async function PUT(request) {
-  if (!process.env.DATABASE_URL) {
-    return databaseNotConfiguredResponse();
+  if (!isDatabaseConfigured()) {
+    return emptyPreferencesResponse(
+      "Database is not configured. Add DATABASE_URL to save preferences.",
+      503
+    );
   }
 
   try {
@@ -89,9 +108,22 @@ export async function PUT(request) {
 
     return NextResponse.json({
       preferences: preferenceFieldsFromRecord(preferences),
+      configured: true,
     });
   } catch (error) {
     console.error("PUT /api/preferences error:", error);
+
+    if (isDatabaseUnreachable(error)) {
+      return NextResponse.json(
+        {
+          error:
+            "Database is unreachable. Start Postgres or check DATABASE_URL.",
+          configured: false,
+        },
+        { status: 503 }
+      );
+    }
+
     return NextResponse.json(
       { error: "Failed to save preferences" },
       { status: 500 }

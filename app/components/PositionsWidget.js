@@ -6,6 +6,7 @@ export default function PositionsWidget({ walletAddress, onConnectClick }) {
   const [positions, setPositions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   useEffect(() => {
     if (!walletAddress) {
@@ -16,14 +17,24 @@ export default function PositionsWidget({ walletAddress, onConnectClick }) {
     const fetchPositions = async () => {
       setLoading(true);
       setError("");
+      setNotice("");
       try {
-        // Fetch from Kalshi API via backend proxy (to handle CORS and auth)
         const res = await fetch("/api/kalshi/positions?limit=100");
-        if (!res.ok) {
-          throw new Error(`Failed to fetch positions: ${res.statusText}`);
+        const data = await res.json().catch(() => ({}));
+
+        if (data.configured === false) {
+          setPositions([]);
+          setNotice(
+            data.message ||
+              "Kalshi API is not configured. Positions will appear once credentials are added."
+          );
+          return;
         }
-        const data = await res.json();
-        
+
+        if (!res.ok) {
+          throw new Error(data.error || `Failed to fetch positions: ${res.statusText}`);
+        }
+
         if (data.positions && Array.isArray(data.positions)) {
           // Map Kalshi data to standardize fields
           const mappedPositions = data.positions.map(pos => {
@@ -58,45 +69,9 @@ export default function PositionsWidget({ walletAddress, onConnectClick }) {
           setPositions([]);
         }
       } catch (err) {
-        console.error("Error fetching positions:", err);
-        setError("Failed to fetch current positions. Showing offline mockup.");
-        
-        // Mock positions fallback
-        setPositions([
-          {
-            id: "1",
-            title: "Will the Fed lower interest rates in June 2026?",
-            outcome: "YES",
-            quantity: 1500,
-            avgPrice: 0.45,
-            currentPrice: 0.58,
-            currentValue: 870,
-            cashPnl: 195,
-            percentPnl: 28.89,
-          },
-          {
-            id: "2",
-            title: "Will SpaceX launch Starship Flight 6 this quarter?",
-            outcome: "YES",
-            quantity: 500,
-            avgPrice: 0.72,
-            currentPrice: 0.65,
-            currentValue: 325,
-            cashPnl: -35,
-            percentPnl: -9.72,
-          },
-          {
-            id: "3",
-            title: "Will any country adopt Bitcoin as legal tender in 2026?",
-            outcome: "NO",
-            quantity: 2000,
-            avgPrice: 0.85,
-            currentPrice: 0.89,
-            currentValue: 1780,
-            cashPnl: 80,
-            percentPnl: 4.71,
-          }
-        ]);
+        console.warn("Error fetching positions:", err.message);
+        setError("Failed to fetch current positions. Try again later.");
+        setPositions([]);
       } finally {
         setLoading(false);
       }
@@ -184,6 +159,7 @@ export default function PositionsWidget({ walletAddress, onConnectClick }) {
           </div>
         ) : (
           <div className="positions-container">
+            {notice && <div className="notice-banner">{notice}</div>}
             {error && <div className="error-banner">{error}</div>}
 
             {positions.length === 0 ? (
@@ -192,7 +168,11 @@ export default function PositionsWidget({ walletAddress, onConnectClick }) {
                   <circle cx="12" cy="12" r="10" />
                   <line x1="8" y1="12" x2="16" y2="12" />
                 </svg>
-                <p>No active positions found for this address.</p>
+                <p>
+                  {notice
+                    ? "Kalshi positions are unavailable until API credentials are configured."
+                    : "No active positions found for this address."}
+                </p>
               </div>
             ) : (
               <div className="positions-list">
@@ -273,10 +253,20 @@ export default function PositionsWidget({ walletAddress, onConnectClick }) {
           flex-direction: column;
           gap: 16px;
         }
+        .notice-banner {
+          background: rgba(0, 242, 254, 0.06);
+          border: 1px solid rgba(0, 242, 254, 0.2);
+          color: var(--text-secondary);
+          padding: 10px 14px;
+          border-radius: 8px;
+          font-size: 12px;
+          line-height: 1.4;
+        }
+
         .error-banner {
-          background: rgba(255, 183, 3, 0.1);
-          border: 1px solid rgba(255, 183, 3, 0.3);
-          color: var(--color-warning);
+          background: rgba(255, 51, 102, 0.08);
+          border: 1px solid rgba(255, 51, 102, 0.25);
+          color: var(--color-danger);
           padding: 10px 14px;
           border-radius: 8px;
           font-size: 12px;

@@ -1,10 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import {
+  connectMetaMask,
+  formatWalletError,
+  isMetaMaskAvailable,
+  WALLET_MODES,
+} from "../lib/wallet/ethereum";
 
 export default function ConnectWalletModal({ isOpen, onClose, onConnect }) {
   const [addressInput, setAddressInput] = useState("");
   const [error, setError] = useState("");
+  const [connecting, setConnecting] = useState(false);
 
   if (!isOpen) return null;
 
@@ -33,31 +40,30 @@ export default function ConnectWalletModal({ isOpen, onClose, onConnect }) {
       return;
     }
     setError("");
-    onConnect(addressInput.toLowerCase());
+    onConnect(addressInput.toLowerCase(), { mode: WALLET_MODES.READ_ONLY });
     onClose();
   };
 
-  const handleSimulateMetaMask = async () => {
+  const handleMetaMaskConnect = async () => {
+    setError("");
+    setConnecting(true);
+
     try {
-      if (typeof window !== "undefined" && window.ethereum) {
-        // Request accounts if extension is present
-        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-        if (accounts && accounts[0]) {
-          onConnect(accounts[0].toLowerCase());
-          onClose();
-          return;
-        }
+      if (!isMetaMaskAvailable()) {
+        setError(
+          "MetaMask not detected. Install the extension or use a read-only address below."
+        );
+        return;
       }
+
+      const address = await connectMetaMask();
+      onConnect(address, { mode: WALLET_MODES.METAMASK });
+      onClose();
     } catch (err) {
-      console.warn("Metamask request rejected or failed", err);
+      setError(formatWalletError(err));
+    } finally {
+      setConnecting(false);
     }
-    
-    // Simulate Metamask fallback
-    const simulatedAddress = "0x" + Array.from({length: 40}, () => 
-      Math.floor(Math.random() * 16).toString(16)
-    ).join("");
-    onConnect(simulatedAddress);
-    onClose();
   };
 
   return (
@@ -70,17 +76,22 @@ export default function ConnectWalletModal({ isOpen, onClose, onConnect }) {
 
         <div className="modal-body">
           <p className="modal-desc">
-            Connect your wallet to retrieve your Polymarket profile, trade count, and positions.
+            Connect with MetaMask to sign Somnia LLM transactions. Read-only addresses
+            can browse profile data but cannot run on-chain recommendations.
           </p>
 
-          <button className="btn-primary w-full connect-option" onClick={handleSimulateMetaMask}>
+          <button
+            className="btn-primary w-full connect-option"
+            onClick={handleMetaMaskConnect}
+            disabled={connecting}
+          >
             <svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor">
               <path d="M29.62 14.18l-3.32-6.52a1.85 1.85 0 00-2.31-.96L16 9.87l-7.99-3.17a1.85 1.85 0 00-2.31.96l-3.32 6.52c-.75 1.48-.48 3.26.68 4.41l9.31 9.31c1.95 1.95 5.12 1.95 7.07 0l9.31-9.31a3.86 3.86 0 00.87-4.41z"/>
             </svg>
-            Connect Wallet Extension
+            {connecting ? "Connecting…" : "Connect MetaMask"}
           </button>
 
-          <div className="divider"><span>OR</span></div>
+          <div className="divider"><span>OR READ-ONLY</span></div>
 
           <form onSubmit={handleConnectCustom} className="modal-form">
             <label className="form-label">Custom Wallet Address</label>
@@ -94,6 +105,7 @@ export default function ConnectWalletModal({ isOpen, onClose, onConnect }) {
               />
               <button type="submit" className="btn-primary">Connect</button>
             </div>
+            <p className="form-hint">View-only — cannot sign Somnia transactions.</p>
             {error && <p className="form-error">{error}</p>}
           </form>
 
@@ -105,7 +117,7 @@ export default function ConnectWalletModal({ isOpen, onClose, onConnect }) {
                 key={acc.address}
                 className="demo-account-item"
                 onClick={() => {
-                  onConnect(acc.address);
+                  onConnect(acc.address, { mode: WALLET_MODES.READ_ONLY });
                   onClose();
                 }}
               >
@@ -196,6 +208,11 @@ export default function ConnectWalletModal({ isOpen, onClose, onConnect }) {
           font-size: 15px;
         }
 
+        .connect-option:disabled {
+          opacity: 0.6;
+          cursor: wait;
+        }
+
         .divider {
           display: flex;
           align-items: center;
@@ -234,6 +251,11 @@ export default function ConnectWalletModal({ isOpen, onClose, onConnect }) {
           color: var(--text-secondary);
           text-transform: uppercase;
           letter-spacing: 0.5px;
+        }
+
+        .form-hint {
+          font-size: 12px;
+          color: var(--text-muted);
         }
 
         .input-group {

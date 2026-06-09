@@ -6,9 +6,9 @@ import RecommendationsWidget from "./components/RecommendationsWidget";
 import PositionsWidget from "./components/PositionsWidget";
 import ConnectWalletModal from "./components/ConnectWalletModal";
 import SettingsModal, { EMPTY_PREFERENCES } from "./components/SettingsModal";
-
 export default function Home() {
   const [walletAddress, setWalletAddress] = useState("");
+  const [walletMode, setWalletMode] = useState(null);
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [preferences, setPreferences] = useState(EMPTY_PREFERENCES);
@@ -25,15 +25,25 @@ export default function Home() {
       const response = await fetch(
         `/api/preferences?address=${encodeURIComponent(address)}`
       );
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to load preferences");
+      if (response.ok) {
+        setPreferences(data.preferences ?? EMPTY_PREFERENCES);
+        return;
       }
 
-      setPreferences(data.preferences ?? EMPTY_PREFERENCES);
+      if (data.configured === false) {
+        setPreferences(data.preferences ?? EMPTY_PREFERENCES);
+        return;
+      }
+
+      console.warn(
+        "Failed to load preferences:",
+        data.error || response.statusText
+      );
+      setPreferences(EMPTY_PREFERENCES);
     } catch (error) {
-      console.error("Failed to load preferences:", error);
+      console.warn("Failed to load preferences:", error.message);
       setPreferences(EMPTY_PREFERENCES);
     } finally {
       setPreferencesLoading(false);
@@ -44,12 +54,14 @@ export default function Home() {
     fetchPreferences(walletAddress);
   }, [walletAddress, fetchPreferences]);
 
-  const handleConnectWallet = (address) => {
+  const handleConnectWallet = (address, options = {}) => {
     setWalletAddress(address);
+    setWalletMode(options.mode ?? null);
   };
 
   const handleDisconnectWallet = () => {
     setWalletAddress("");
+    setWalletMode(null);
     setPreferences(EMPTY_PREFERENCES);
   };
 
@@ -163,6 +175,7 @@ export default function Home() {
         <section className="widget-wrapper glass-card" style={{ gridColumn: '1 / -1' }}>
           <RecommendationsWidget
             walletAddress={walletAddress}
+            walletMode={walletMode}
             preferences={preferences}
             onConnectClick={() => setIsWalletModalOpen(true)}
           />

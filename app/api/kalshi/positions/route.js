@@ -22,13 +22,14 @@ export async function GET(request) {
     const apiTimestamp = process.env.KALSHI_ACCESS_TIMESTAMP;
 
     if (!apiKey || !apiSignature) {
-      console.error("Kalshi API credentials not configured");
       return new Response(
         JSON.stringify({
-          error: "API credentials not configured",
-          positions: []
+          positions: [],
+          configured: false,
+          message:
+            "Kalshi API credentials not configured. Add KALSHI_ACCESS_KEY and KALSHI_ACCESS_SIGNATURE to .env.",
         }),
-        { status: 503, headers: { "Content-Type": "application/json" } }
+        { status: 200, headers: { "Content-Type": "application/json" } }
       );
     }
 
@@ -81,6 +82,7 @@ export async function GET(request) {
         positions: data.positions || [],
         totalCount: data.positions?.length || 0,
         limit,
+        configured: true,
       }),
       {
         status: 200,
