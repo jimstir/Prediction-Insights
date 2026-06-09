@@ -82,7 +82,7 @@ export default function ProfileWidget({ walletAddress, onDisconnect, onConnectCl
         setMarketsCount(finalMarketsCount);
       } catch (err) {
         console.error("Error fetching profile details:", err);
-        setError("Failed to load Polymarket profile data. Showing offline fallback.");
+        setError("Failed to load profile data. Showing offline fallback.");
         // Fallback mockup data for a beautiful look if API is rate-limited or blocked
         setProfileData({
           name: "AlphaTrader",
@@ -117,7 +117,7 @@ export default function ProfileWidget({ walletAddress, onDisconnect, onConnectCl
               <path d="M7 11V7a5 5 0 0 1 10 0v4" />
             </svg>
           </div>
-          <p className="empty-text">Connect your wallet to retrieve your Polymarket profile metrics.</p>
+          <p className="empty-text">Connect your wallet to retrieve your profile metrics.</p>
           <button className="btn-primary" onClick={onConnectClick}>
             Connect Wallet
           </button>
@@ -158,7 +158,7 @@ export default function ProfileWidget({ walletAddress, onDisconnect, onConnectCl
   }
 
   const shortenedAddress = `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`;
-  const displayName = profileData?.name || profileData?.pseudonym || "Polymarket Trader";
+  const displayName = profileData?.name || profileData?.pseudonym || "Profile";
   const avatarUrl = profileData?.profileImage || `https://api.dicebear.com/7.x/identicon/svg?seed=${walletAddress}`;
 
   return (
@@ -227,7 +227,7 @@ export default function ProfileWidget({ walletAddress, onDisconnect, onConnectCl
 
             <div className="network-status">
               <span className="status-dot"></span>
-              <span className="status-label">Polygon Network Mainnet</span>
+              <span className="status-label">Somnia Network Mainnet</span>
             </div>
           </div>
         )}

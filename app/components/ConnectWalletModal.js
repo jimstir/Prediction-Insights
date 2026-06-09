@@ -90,47 +90,6 @@ export default function ConnectWalletModal({ isOpen, onClose, onConnect }) {
             </svg>
             {connecting ? "Connecting…" : "Connect MetaMask"}
           </button>
-
-          <div className="divider"><span>OR READ-ONLY</span></div>
-
-          <form onSubmit={handleConnectCustom} className="modal-form">
-            <label className="form-label">Custom Wallet Address</label>
-            <div className="input-group">
-              <input
-                type="text"
-                className="form-input"
-                placeholder="0x..."
-                value={addressInput}
-                onChange={(e) => setAddressInput(e.target.value)}
-              />
-              <button type="submit" className="btn-primary">Connect</button>
-            </div>
-            <p className="form-hint">View-only — cannot sign Somnia transactions.</p>
-            {error && <p className="form-error">{error}</p>}
-          </form>
-
-          <div className="divider"><span>OR SELECT A DEMO WHALE</span></div>
-
-          <div className="demo-accounts-list">
-            {demoAccounts.map((acc) => (
-              <div
-                key={acc.address}
-                className="demo-account-item"
-                onClick={() => {
-                  onConnect(acc.address, { mode: WALLET_MODES.READ_ONLY });
-                  onClose();
-                }}
-              >
-                <div className="demo-acc-info">
-                  <span className="demo-acc-name">{acc.name}</span>
-                  <span className="demo-acc-addr">
-                    {acc.address.slice(0, 6)}...{acc.address.slice(-6)}
-                  </span>
-                </div>
-                <span className="demo-acc-tag">{acc.type}</span>
-              </div>
-            ))}
-          </div>
         </div>
       </div>
 

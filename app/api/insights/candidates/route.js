@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchKalshiCandidateEvents } from "../../lib/kalshi";
+import { fetchKalshiCandidateEvents } from "../../../lib/kalshi";
 
 export const runtime = "nodejs";
 

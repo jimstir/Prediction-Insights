@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getPrisma } from "../../lib/prisma";
+import { getPrisma } from "../../../lib/prisma";
 
 /**
  * POST /api/somnia/invocation

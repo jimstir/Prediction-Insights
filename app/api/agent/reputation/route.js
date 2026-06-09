@@ -8,8 +8,8 @@ import {
   createReputationAttestation,
   saveReputationAttestation,
   logReputationEvent,
-} from "../../lib/erc8004/reputationRegistry";
-import { getOrCreateAgentId } from "../../lib/erc8004/agentIdentity";
+} from "../../../lib/erc8004/reputationRegistry";
+import { getOrCreateAgentId } from "../../../lib/erc8004/agentIdentity";
 
 export async function POST(request) {
   try {
