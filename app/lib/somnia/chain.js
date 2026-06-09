@@ -3,7 +3,7 @@ import { SOMNIA_CHAIN_ID } from "./constants";
 
 export const somniaChain = defineChain({
   id: SOMNIA_CHAIN_ID,
-  name: "Somnia",
+  name: SOMNIA_CHAIN_ID === 50312 ? "Somnia Testnet" : "Somnia Mainnet",
   nativeCurrency: {
     name: "SOMI",
     symbol: "SOMI",
@@ -11,7 +11,20 @@ export const somniaChain = defineChain({
   },
   rpcUrls: {
     default: {
-      http: ["https://api.infra.mainnet.somnia.network/"],
+      http: [
+        SOMNIA_CHAIN_ID === 50312
+          ? "https://api.testnet.somnia.network/"
+          : "https://api.infra.mainnet.somnia.network/",
+      ],
+    },
+  },
+  blockExplorers: {
+    default: {
+      name: "Somnia Explorer",
+      url:
+        SOMNIA_CHAIN_ID === 50312
+          ? "https://explorer.testnet.somnia.network"
+          : "https://explorer.somnia.network",
     },
   },
 });

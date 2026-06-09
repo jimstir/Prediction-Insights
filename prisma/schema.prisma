@@ -52,6 +52,10 @@ model Preference {
   losses            Int     @default(0)
   popularMarkets    String  @default("") // Comma-separated market categories
 
+  // ERC-8004 Agent Identity
+  agentId           Int?    // Unique agent ID for on-chain identity and reputation
+  agentRegisteredAt DateTime? // When agent was registered on-chain
+
   // Timestamps
   lastScoringUpdate DateTime @default(now()) @updatedAt
   createdAt         DateTime @default(now())
@@ -60,6 +64,7 @@ model Preference {
   // Relations
   favorites         MarketFavorite[]
   engagementHistory UserEngagement[]
+  somniaInvocations SomniaInvocation[]
 }
 
 /// Logs AI queries, analyzed markets, and reports generated
@@ -187,4 +192,29 @@ model UserEngagement {
   lastInteraction DateTime @default(now()) @updatedAt
   
   @@unique([walletId, marketId]) // One engagement record per user per market
+}
+
+/// Somnia LLM invocation tracking for recommendations
+model SomniaInvocation {
+  id              String   @id @default(uuid())
+  walletId        String
+  preference      Preference @relation(fields: [walletId], references: [walletId], onDelete: Cascade)
+
+  // Somnia platform data
+  requestId       String   // Request ID from Somnia platform
+  transactionHash String   // Transaction hash of the createRequest call
+
+  // LLM response data
+  response        String   @db.Text // The LLM response (recommendations)
+  receipts        Json     // Receipts from Somnia receipts service (array of receipt objects)
+
+  // Metadata
+  recommendationCount Int  // Number of recommendations returned
+  status          String   @default("completed") // completed, failed, pending
+
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([requestId]) // Prevent duplicate invocations for same request
 }

@@ -40,4 +40,19 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+
 /app/generated/prisma
+
+# Hardhat
+/artifacts
+/cache
+/deployments
+hardhat-waffle.json
+localhost-*.json
+
+# Ethers.js
+wallet.json
+
+# OS
+.DS_Store
+Thumbs.db

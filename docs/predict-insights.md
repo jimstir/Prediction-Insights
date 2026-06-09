@@ -341,7 +341,8 @@ The recommendation agent's registration file MUST be formatted as:
 
 ```
 
-Each user profile SHOULD be assigned to its own `agentId`.
+Each user profile MAY be assigned to its own `agentId`.
+A platform supporting the recommendation tool MAY be assigned one `agentId` that every profile uses.
 The ERC8004 agent reputation registry will allow the owner to provide feedback about the agent's responses.
 
 Security Note:

@@ -66,16 +66,27 @@ export async function buildRecommendationsInferenceInputs(context = {}) {
 
 /**
  * Encodes inferString calldata for the Somnia LLM agent contract.
- * Now with async support for candidate event fetching.
+ * Returns both encodedPayload and callbackSelector for platform contract.
+ * For frontend calls, we use a dummy callback selector since we poll for results via receipts.
  * @see https://docs.somnia.network/agents/base-agents/llm-inference#simple-inference
  */
 export async function buildRecommendationsInferenceCalldata(context = {}) {
   const { prompt, system, chainOfThought, allowedValues } =
     await buildRecommendationsInferenceInputs(context);
 
-  return encodeFunctionData({
+  // Encode the LLM agent call (this becomes the payload for platform contract)
+  const encodedPayload = encodeFunctionData({
     abi: LLM_INFER_STRING_ABI,
     functionName: "inferString",
     args: [prompt, system, chainOfThought, allowedValues],
   });
+
+  // For frontend calls, we use a placeholder callback selector
+  // The platform contract requires this parameter but we'll poll for results via receipts instead
+  const callbackSelector = "0x00000000";
+
+  return {
+    encodedPayload,
+    callbackSelector,
+  };
 }

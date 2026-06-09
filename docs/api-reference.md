@@ -451,6 +451,7 @@ Get user's engagement summary.
 Displays individual recommended market with actions.
 
 **Props:**
+
 ```javascript
 {
   market: Market,              // Market data
@@ -550,4 +551,128 @@ await fetch("/api/profile/scores", {
 - Engagement tracking happens automatically when users interact
 - Similar markets discovered via embedding similarity + LLM validation
 - Favorites persist across sessions
+
+---
+
+## Kalshi Portfolio API
+
+### Get User Positions
+
+#### GET /api/kalshi/positions
+
+Fetches user's current open positions from Kalshi trading platform. This endpoint proxies requests to the Kalshi external API while handling authentication and rate limiting.
+
+**Query Parameters:**
+- `limit` (optional, default: 100): Maximum number of positions to return (1-200)
+
+**Request:**
+```bash
+curl http://localhost:3000/api/kalshi/positions?limit=100
+```
+
+**Response (Success):**
+```json
+{
+  "positions": [
+    {
+      "id": "pos-123",
+      "positionId": "pos-123",
+      "eventTicker": "BTCUSD-250630",
+      "eventTitle": "Will Bitcoin exceed $100K by June 30, 2026?",
+      "quantity": 1500,
+      "side": "YES",
+      "avgPrice": 0.45,
+      "avgEntryPrice": 0.45,
+      "currentPrice": 0.58,
+      "lastTradePrice": 0.58,
+      "priceLimit": 0.60,
+      "status": "open",
+      "createdAt": "2026-06-01T10:30:00Z"
+    },
+    {
+      "id": "pos-124",
+      "positionId": "pos-124",
+      "eventTicker": "SPACEX-Q2-2026",
+      "eventTitle": "Will SpaceX launch Starship Flight 6 in Q2 2026?",
+      "quantity": 500,
+      "side": "YES",
+      "avgPrice": 0.72,
+      "avgEntryPrice": 0.72,
+      "currentPrice": 0.65,
+      "lastTradePrice": 0.65,
+      "priceLimit": 0.70,
+      "status": "open",
+      "createdAt": "2026-06-02T14:15:00Z"
+    }
+  ],
+  "totalCount": 2,
+  "limit": 100
+}
+```
+
+**Response (Error - Rate Limited):**
+```json
+{
+  "error": "Rate limited. Try again later.",
+  "positions": [],
+  "retryAfter": 60
+}
+```
+
+**Status Codes:**
+- `200 OK` - Positions fetched successfully
+- `400 Bad Request` - Invalid limit parameter (not 1-200)
+- `429 Too Many Requests` - Rate limited by Kalshi API
+- `500 Internal Server Error` - Failed to fetch positions
+- `503 Service Unavailable` - API credentials not configured
+
+**Environment Variables Required:**
+```bash
+KALSHI_ACCESS_KEY=<your-api-key>
+KALSHI_ACCESS_SIGNATURE=<your-api-signature>
+KALSHI_ACCESS_TIMESTAMP=<your-api-timestamp>
+```
+
+**Position Object Fields:**
+- `id` (string): Unique position identifier
+- `eventTicker` (string): Kalshi event ticker (e.g., "BTCUSD-250630")
+- `eventTitle` (string): Human-readable market question
+- `quantity` (number): Number of shares held
+- `side` (string): Position side ("YES" or "NO")
+- `avgPrice` (number): Average entry price (0-1 for binary markets)
+- `currentPrice` (number): Latest market price
+- `priceLimit` (number): Price limit order (if applicable)
+- `status` (string): Position status ("open", "closed", "expired")
+- `createdAt` (string): ISO timestamp when position was created
+
+**Usage in PositionsWidget:**
+```javascript
+// Frontend automatically calls this endpoint
+const res = await fetch("/api/kalshi/positions?limit=100");
+const data = await res.json();
+
+// Map response to display format
+const positions = data.positions.map(pos => ({
+  id: pos.id,
+  title: pos.eventTitle,
+  outcome: pos.side,
+  quantity: pos.quantity,
+  avgPrice: pos.avgPrice,
+  currentPrice: pos.currentPrice,
+  currentValue: pos.quantity * pos.currentPrice,
+  cashPnl: (pos.currentPrice - pos.avgPrice) * pos.quantity,
+  percentPnl: ((pos.currentPrice - pos.avgPrice) / pos.avgPrice) * 100
+}));
+```
+
+**Kalshi External API Reference:**
+- Endpoint: `https://external-api.kalshi.com/trade-api/v2/portfolio/positions`
+- Authentication: KALSHI-ACCESS-KEY, KALSHI-ACCESS-SIGNATURE, KALSHI-ACCESS-TIMESTAMP headers
+- Documentation: [Kalshi API Docs](https://kalshi.com/api)
+
+**Error Handling:**
+- Network timeouts default to 15 seconds
+- Rate limit errors are propagated with Retry-After header
+- Invalid credentials return 503 without exposing keys
+- All errors include positions array (empty if failed)
 - Profile scores improve with more user data over time

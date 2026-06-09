@@ -17,43 +17,39 @@ export default function PositionsWidget({ walletAddress, onConnectClick }) {
       setLoading(true);
       setError("");
       try {
-        const res = await fetch(
-          `https://data-api.polymarket.com/positions?user=${walletAddress}`
-        );
+        // Fetch from Kalshi API via backend proxy (to handle CORS and auth)
+        const res = await fetch("/api/kalshi/positions?limit=100");
         if (!res.ok) {
           throw new Error(`Failed to fetch positions: ${res.statusText}`);
         }
         const data = await res.json();
         
-        if (Array.isArray(data)) {
-          // Map data to standardize fields in case they change
-          const mappedPositions = data.map(pos => {
-            const size = parseFloat(pos.size || pos.amount || 0);
-            const avgPrice = parseFloat(pos.avgPrice || pos.avgCost || 0);
-            const currentPrice = parseFloat(pos.currentPrice || pos.price || avgPrice || 0);
-            const currentValue = pos.currentValue !== undefined 
-              ? parseFloat(pos.currentValue) 
-              : size * currentPrice;
+        if (data.positions && Array.isArray(data.positions)) {
+          // Map Kalshi data to standardize fields
+          const mappedPositions = data.positions.map(pos => {
+            const quantity = parseFloat(pos.quantity || pos.size || 0);
+            const avgPrice = parseFloat(pos.avgPrice || pos.avgEntryPrice || 0);
+            const currentPrice = parseFloat(pos.currentPrice || pos.lastTradePrice || avgPrice || 0);
+            const currentValue = quantity * currentPrice;
             
-            const cashPnl = pos.cashPnl !== undefined 
-              ? parseFloat(pos.cashPnl) 
-              : (currentPrice - avgPrice) * size;
-              
-            const percentPnl = pos.percentPnl !== undefined 
-              ? parseFloat(pos.percentPnl) 
-              : avgPrice > 0 ? ((currentPrice - avgPrice) / avgPrice) * 100 : 0;
+            const cashPnl = (currentPrice - avgPrice) * quantity;
+            const percentPnl = avgPrice > 0 ? ((currentPrice - avgPrice) / avgPrice) * 100 : 0;
 
             return {
-              id: pos.id || pos.token_id || Math.random().toString(),
-              title: pos.title || "Unknown Market Outcome",
-              assetName: pos.asset || pos.marketName || "Polymarket Asset",
-              outcome: pos.outcome || (pos.title?.includes("Yes") ? "YES" : "NO"),
-              size,
+              id: pos.id || pos.positionId || Math.random().toString(),
+              title: pos.eventTitle || pos.title || "Unknown Market",
+              assetName: pos.eventTicker || pos.tickerName || "Kalshi Market",
+              outcome: pos.side || (pos.title?.includes("Yes") ? "YES" : "NO"),
+              eventTicker: pos.eventTicker,
+              quantity,
               avgPrice,
               currentPrice,
               currentValue,
               cashPnl,
               percentPnl,
+              createdAt: pos.createdAt,
+              priceLimit: pos.priceLimit,
+              status: pos.status || "open",
             };
           });
           
@@ -71,7 +67,7 @@ export default function PositionsWidget({ walletAddress, onConnectClick }) {
             id: "1",
             title: "Will the Fed lower interest rates in June 2026?",
             outcome: "YES",
-            size: 1500,
+            quantity: 1500,
             avgPrice: 0.45,
             currentPrice: 0.58,
             currentValue: 870,
@@ -82,7 +78,7 @@ export default function PositionsWidget({ walletAddress, onConnectClick }) {
             id: "2",
             title: "Will SpaceX launch Starship Flight 6 this quarter?",
             outcome: "YES",
-            size: 500,
+            quantity: 500,
             avgPrice: 0.72,
             currentPrice: 0.65,
             currentValue: 325,
@@ -93,7 +89,7 @@ export default function PositionsWidget({ walletAddress, onConnectClick }) {
             id: "3",
             title: "Will any country adopt Bitcoin as legal tender in 2026?",
             outcome: "NO",
-            size: 2000,
+            quantity: 2000,
             avgPrice: 0.85,
             currentPrice: 0.89,
             currentValue: 1780,
@@ -210,7 +206,7 @@ export default function PositionsWidget({ walletAddress, onConnectClick }) {
                           <span className={`outcome-badge ${pos.outcome === "YES" ? "badge-yes" : "badge-no"}`}>
                             {pos.outcome}
                           </span>
-                          <span className="pos-size">{pos.size.toLocaleString()} shares</span>
+                          <span className="pos-size">{pos.quantity.toLocaleString()} shares</span>
                         </div>
                       </div>
 

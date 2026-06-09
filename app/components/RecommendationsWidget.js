@@ -128,18 +128,30 @@ export default function RecommendationsWidget({
         preferences,
       });
 
+      // New response format includes: { response, requestId, transactionHash, receipts }
+      const llmResponse = result.response;
+      const requestId = result.requestId;
+      const transactionHash = result.transactionHash;
+      const receipts = result.receipts;
+
+      console.log("Somnia inference completed:", {
+        requestId,
+        transactionHash,
+        receiptsCount: receipts?.length,
+      });
+
       // Parse recommendations from LLM response
       let parsedRecommendations = [];
-      if (typeof result === "string") {
+      if (typeof llmResponse === "string") {
         try {
-          const parsed = JSON.parse(result);
+          const parsed = JSON.parse(llmResponse);
           parsedRecommendations = Array.isArray(parsed) ? parsed : [];
         } catch (e) {
           // If not JSON, try to extract recommendations from text
           console.warn("Could not parse LLM response as JSON");
         }
-      } else if (Array.isArray(result)) {
-        parsedRecommendations = result;
+      } else if (Array.isArray(llmResponse)) {
+        parsedRecommendations = llmResponse;
       }
 
       // Transform recommendations to market format
@@ -159,6 +171,32 @@ export default function RecommendationsWidget({
       setRecommendations(markets);
       setExpanded(true);
 
+      // Save invocation response and receipts to database
+      if (walletAddress && requestId) {
+        try {
+          const saveRes = await fetch("/api/somnia/invocation", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              address: walletAddress,
+              requestId,
+              transactionHash,
+              response: llmResponse,
+              receipts,
+              recommendationCount: markets.length,
+            }),
+          });
+
+          if (saveRes.ok) {
+            console.log("Invocation saved to database");
+          } else {
+            console.warn("Failed to save invocation to database");
+          }
+        } catch (e) {
+          console.warn("Could not save invocation to database:", e);
+        }
+      }
+
       // Fetch and set profile scores
       if (walletAddress) {
         try {
@@ -171,6 +209,32 @@ export default function RecommendationsWidget({
           }
         } catch (e) {
           console.warn("Could not fetch profile scores:", e);
+        }
+      }
+
+      // Submit reputation attestation with engagement summary
+      if (walletAddress && markets.length > 0) {
+        try {
+          const startTime = Date.now();
+          const attestationRes = await fetch("/api/agent/reputation", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              address: walletAddress,
+              recommendationCount: markets.length,
+              inferenceTime: Date.now() - startTime,
+              requestId,
+            }),
+          });
+
+          if (attestationRes.ok) {
+            const attestationData = await attestationRes.json();
+            console.log("Reputation attestation created:", attestationData.attestationId);
+          } else {
+            console.warn("Failed to create reputation attestation");
+          }
+        } catch (e) {
+          console.warn("Could not submit reputation attestation:", e);
         }
       }
     } catch (err) {
