@@ -1,5 +1,6 @@
-This is a prediction market recommendation tool.
-The 
+# Prediction Insights
+
+Prediction Insights is a recommendation tool that uses on-chain LLM agents powered by the Somnia Network to create a highly curated list of prediction markets. By leveraging Somnia for LLM requests, the platform analyzes live events from Kalshi and matches them to your custom preferences, resulting in tailored insights specifically for you.
 
 ## Getting Started
 
