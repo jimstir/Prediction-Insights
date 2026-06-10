@@ -81,7 +81,12 @@ describe("Somnia mainnet configuration", () => {
     const createRequestData = encodeFunctionData({
       abi: SOMNIA_AGENTS_PLATFORM_ABI,
       functionName: "createRequest",
-      args: [BigInt(SOMNIA_LLM_AGENT_ID), encodedPayload, "0x00000000"],
+      args: [
+        BigInt(SOMNIA_LLM_AGENT_ID),
+        "0x0000000000000000000000000000000000000000",
+        "0x00000000",
+        encodedPayload,
+      ],
     });
 
     expect(createRequestData).toMatch(/^0x[a-fA-F0-9]+$/);

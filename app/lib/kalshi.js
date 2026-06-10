@@ -6,12 +6,16 @@
  * ranking, or recommendation logic - only retrieval and normalization.
  */
 
-const KALSHI_API_BASE = "https://external-api.kalshi.com/trade-api/v2";
-const KALSHI_EVENTS_ENDPOINT = "/events";
+const KALSHI_API_BASE = "https://external-api.kalshi.com/trade-api/v2/";
+const KALSHI_EVENTS_ENDPOINT = "events";
 const DEFAULT_LIMIT = 200;
 
 // Request timeout in milliseconds
 const REQUEST_TIMEOUT_MS = 15000;
+
+// Kalshi API key (optional - some endpoints may require authentication)
+// Add to .env file: KALSHI_API_KEY=your_api_key_here
+const KALSHI_API_KEY = process.env.KALSHI_API_KEY || "";
 
 /**
  * @typedef {Object} CandidateEvent
@@ -61,12 +65,19 @@ export async function fetchKalshiCandidateEvents(options = {}) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
+    const headers = {
+      "Content-Type": "application/json",
+      "User-Agent": "PolePredict/1.0",
+    };
+
+    // Add API key if provided
+    if (KALSHI_API_KEY) {
+      headers["Authorization"] = `Bearer ${KALSHI_API_KEY}`;
+    }
+
     response = await fetch(url.toString(), {
       method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": "PolePredict/1.0",
-      },
+      headers,
       signal: controller.signal,
     });
 
@@ -161,15 +172,17 @@ function normalizeEvent(rawEvent) {
     return null;
   }
 
+  const ticker = rawEvent.event_ticker || rawEvent.ticker;
+
   // Require at least ticker and title
-  if (!rawEvent.ticker || !rawEvent.title) {
+  if (!ticker || !rawEvent.title) {
     console.warn("Skipping event missing ticker or title:", rawEvent);
     return null;
   }
 
   // Build normalized event with only needed fields
   const normalized = {
-    eventTicker: String(rawEvent.ticker).trim(),
+    eventTicker: String(ticker).trim(),
     title: String(rawEvent.title).trim(),
   };
 

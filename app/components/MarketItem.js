@@ -25,7 +25,23 @@ export default function MarketItem({
     onViewSimilar?.(market);
   };
 
-  const kalshiUrl = market.kalshiUrl || `https://kalshi.com/markets/${market.kalshiId}`;
+  const ticker = (market.kalshiId || "").toLowerCase();
+  const seriesTicker = ticker.split("-")[0];
+  
+  let slug = "event";
+  if (market.title) {
+    let cleanTitle = market.title;
+    cleanTitle = cleanTitle.replace(/^(will\s+someone\s+be\s+the|will\s+there\s+be\s+a|will\s+the|will\s+a|will)/i, "");
+    cleanTitle = cleanTitle.replace(/\?+$/, "");
+    slug = cleanTitle
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    if (!slug) slug = "event";
+  }
+
+  const kalshiUrl = market.kalshiUrl || `https://kalshi.com/markets/${seriesTicker}/${slug}/${ticker}?op_market_ticker=${ticker.toUpperCase()}-FSHA`;
 
   return (
     <div className="market-item">

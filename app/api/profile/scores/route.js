@@ -52,7 +52,7 @@ export async function PUT(request) {
     }
 
     // Get user preference
-    const preference = await prisma.preference.findUnique({
+    const preference = await prisma.preference.findFirst({
       where: { wallet: { address: normalizedAddress } },
     });
 
@@ -157,7 +157,7 @@ export async function GET(request) {
       );
     }
 
-    const preference = await prisma.preference.findUnique({
+    const preference = await prisma.preference.findFirst({
       where: { wallet: { address: normalizedAddress } },
       select: {
         inferredInterests: true,

@@ -8,17 +8,17 @@ import {
 
 export const somniaChain = defineChain({
   id: SOMNIA_CHAIN_ID,
-  name: isSomniaTestnet(SOMNIA_CHAIN_ID) ? "Somnia Testnet" : "Somnia Mainnet",
+  name: isSomniaTestnet(SOMNIA_CHAIN_ID) ? "Somnia Shannon Testnet" : "Somnia Mainnet",
   nativeCurrency: {
-    name: "SOMI",
-    symbol: "SOMI",
+    name: isSomniaTestnet(SOMNIA_CHAIN_ID) ? "STT" : "SOMI",
+    symbol: isSomniaTestnet(SOMNIA_CHAIN_ID) ? "STT" : "SOMI",
     decimals: 18,
   },
   rpcUrls: {
     default: {
       http: [
         isSomniaTestnet(SOMNIA_CHAIN_ID)
-          ? "https://api.testnet.somnia.network/"
+          ? "https://api.infra.testnet.somnia.network/"
           : "https://api.infra.mainnet.somnia.network/",
       ],
     },
@@ -27,7 +27,7 @@ export const somniaChain = defineChain({
     default: {
       name: "Somnia Explorer",
       url: isSomniaTestnet(SOMNIA_CHAIN_ID)
-        ? "https://explorer.testnet.somnia.network"
+        ? "https://shannon-explorer.somnia.network"
         : "https://explorer.somnia.network",
     },
   },

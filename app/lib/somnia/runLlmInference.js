@@ -61,15 +61,44 @@ export async function sendSomniaInferenceTransaction(
 
   assertAccountMatches(expectedAddress, account);
 
+  // Read deposit floor dynamic reserve from contract
+  const publicClient = createPublicClientForChain();
+  let reserve = 0n;
+  try {
+    reserve = await publicClient.readContract({
+      address: SOMNIA_AGENTS_PLATFORM_ADDRESS,
+      abi: SOMNIA_AGENTS_PLATFORM_ABI,
+      functionName: "getRequestDeposit",
+    });
+  } catch (err) {
+    console.warn("Could not read contract request deposit floor; using 0 fallback", err);
+  }
+
+  // reward = 0.07 SOMI * 3 = 0.21 SOMI (as per documentation specification)
+  const reward = 70000000000000000n * 3n;
+  const deposit = reserve + reward;
+  console.log("SENDING SOMNIA INFERENCE TX:", {
+    address: SOMNIA_AGENTS_PLATFORM_ADDRESS,
+    agentId: SOMNIA_LLM_AGENT_ID,
+    agentIdBigInt: BigInt(SOMNIA_LLM_AGENT_ID).toString(),
+    callbackSelector,
+    payloadLength: encodedPayload.length,
+    deposit: deposit.toString()
+  });
+
   try {
     const hash = await walletClient.writeContract({
       account,
       address: SOMNIA_AGENTS_PLATFORM_ADDRESS,
       abi: SOMNIA_AGENTS_PLATFORM_ABI,
       functionName: "createRequest",
-      args: [BigInt(SOMNIA_LLM_AGENT_ID), encodedPayload, callbackSelector],
-      value: parseEther(SOMNIA_REQUEST_DEPOSIT_ETH),
-      gas: SOMNIA_INFERENCE_GAS_LIMIT,
+      args: [
+        BigInt(SOMNIA_LLM_AGENT_ID),
+        "0x0000000000000000000000000000000000000000", // no callback address
+        callbackSelector, // callback selector (usually 0x00000000)
+        encodedPayload, // payload bytes containing agent function inputs
+      ],
+      value: deposit,
     });
 
     return hash;
@@ -90,6 +119,7 @@ export async function waitForRequestCreated(transactionHash) {
     hash: transactionHash,
   });
 
+  // Try standard decoding of RequestCreated event
   for (const log of receipt.logs) {
     try {
       const decoded = decodeEventLog({
@@ -107,6 +137,26 @@ export async function waitForRequestCreated(transactionHash) {
       continue;
     }
   }
+
+  // Debug block: If not found, log details of the receipt logs to help diagnose ABI or mismatch issues
+  console.error(`RequestCreated event not found in transaction receipt for hash ${transactionHash}`);
+  console.error(`Transaction status: ${receipt.status}`);
+  console.error(`Number of logs in receipt: ${receipt.logs.length}`);
+  
+  receipt.logs.forEach((log, index) => {
+    console.error(`Log #${index}: address=${log.address}, topics=${JSON.stringify(log.topics)}, data=${log.data}`);
+    // Try to decode against any event in ABI to see what actually matched
+    try {
+      const decodedAny = decodeEventLog({
+        abi: SOMNIA_AGENTS_PLATFORM_ABI,
+        data: log.data,
+        topics: log.topics,
+      });
+      console.error(`Successfully decoded log #${index} as event "${decodedAny.eventName}":`, decodedAny.args);
+    } catch (err) {
+      console.error(`Failed to decode log #${index} against platform ABI: ${err.message}`);
+    }
+  });
 
   throw new Error("RequestCreated event not found in transaction receipt");
 }
@@ -247,7 +297,7 @@ export async function runSomniaRecommendationsInference(context = {}) {
 
   assertAccountMatches(context.walletAddress, connectedAccount);
 
-  const { encodedPayload, callbackSelector } =
+  const { encodedPayload, callbackSelector, _meta } =
     await buildRecommendationsInferenceCalldata(context);
 
   const txHash = await sendSomniaInferenceTransaction(
@@ -258,13 +308,137 @@ export async function runSomniaRecommendationsInference(context = {}) {
 
   const { requestId, blockNumber } = await waitForRequestCreated(txHash);
 
-  await waitForRequestFinalized(requestId, blockNumber);
+  const finalizationLog = await waitForRequestFinalized(requestId, blockNumber);
 
-  const receipts = await fetchSomniaReceiptsWithRetry(requestId);
-  const llmResponse = extractLLMResponseFromReceipts(receipts);
+  let receipts = [];
+  let llmResponse = "";
+
+  try {
+    // Attempt 1: Fetch receipts from off-chain receipts service (with 3 quick attempts)
+    receipts = await fetchSomniaReceiptsWithRetry(requestId, { maxAttempts: 3, delayMs: 4000 });
+    llmResponse = extractLLMResponseFromReceipts(receipts);
+  } catch (error) {
+    console.warn("Somnia receipts service failed or timed out. Fetching response directly from on-chain transaction calldata...", error);
+    
+    // Attempt 2: Retrieve response directly from blockchain finalization transaction calldata
+    try {
+      if (finalizationLog && finalizationLog.transactionHash) {
+        const publicClient = createPublicClientForChain();
+        const tx = await publicClient.getTransaction({ hash: finalizationLog.transactionHash });
+        
+        let rawText = "";
+        const calldata = tx.input.slice(10); // Strip selector
+        for (let i = 0; i < calldata.length; i += 2) {
+          const charCode = parseInt(calldata.slice(i, i + 2), 16);
+          if (charCode >= 32 && charCode <= 126) {
+            rawText += String.fromCharCode(charCode);
+          } else {
+            rawText += " ";
+          }
+        }
+
+        // Clean text and extract JSON or clean text
+        const cleanedText = rawText.replace(/\s+/g, " ").trim();
+        console.log("Raw on-chain extracted text:", cleanedText);
+        
+        // Scan for a valid JSON object or array by checking successive indices of '{' or '['
+        let parsedJson = false;
+        
+        // Try parsing JSON object first
+        let objStart = cleanedText.indexOf('{');
+        while (objStart !== -1) {
+          const objEnd = cleanedText.lastIndexOf('}');
+          if (objEnd > objStart) {
+            const candidate = cleanedText.slice(objStart, objEnd + 1);
+            try {
+              JSON.parse(candidate);
+              llmResponse = candidate;
+              parsedJson = true;
+              console.log("On-chain response parsed successfully as JSON object.");
+              break;
+            } catch (e) {
+              objStart = cleanedText.indexOf('{', objStart + 1);
+            }
+          } else {
+            break;
+          }
+        }
+        
+        // If not found, try parsing JSON array
+        if (!parsedJson) {
+          let arrayStart = cleanedText.indexOf('[');
+          while (arrayStart !== -1) {
+            const arrayEnd = cleanedText.lastIndexOf(']');
+            if (arrayEnd > arrayStart) {
+              const candidate = cleanedText.slice(arrayStart, arrayEnd + 1);
+              try {
+                JSON.parse(candidate);
+                llmResponse = candidate;
+                parsedJson = true;
+                console.log("On-chain response parsed successfully as JSON array.");
+                break;
+              } catch (e) {
+                arrayStart = cleanedText.indexOf('[', arrayStart + 1);
+              }
+            } else {
+              break;
+            }
+          }
+        }
+
+        if (!parsedJson) {
+          // Fallback to sentence parsing or cleaned text if no valid JSON was found
+          const llmMatch = cleanedText.match(/(?:I\s+am|[A-Z][a-z]+)[^.!?]+[.!?]/g);
+          llmResponse = llmMatch ? llmMatch.join(" ") : cleanedText;
+        }
+        
+        console.log("Decoded on-chain LLM Response:", llmResponse);
+      } else {
+        throw new Error("No finalization log transaction hash available to extract on-chain response.");
+      }
+    } catch (fallbackError) {
+      console.error("Failed to extract response on-chain:", fallbackError);
+      throw new Error(`Failed to retrieve LLM response from both receipts and on-chain logs: ${fallbackError.message}`);
+    }
+  }
+
+  // Map and normalize recommendations using the candidates list metadata
+  let mappedResponse = llmResponse;
+  try {
+    const parsed = JSON.parse(llmResponse);
+    // Support both the recommendation.md schema: { recommendations: [ { market_id, reasoning, primary_topic } ] }
+    // and direct arrays [ { eventTicker, title, matchReason } ]
+    const recommendationsList = parsed.recommendations || (Array.isArray(parsed) ? parsed : null);
+    
+    if (recommendationsList && Array.isArray(recommendationsList)) {
+      const candidatesList = _meta?.candidatesList || [];
+      
+      const mappedList = recommendationsList.map((rec) => {
+        const marketId = rec.market_id || rec.eventTicker || rec.kalshiId || "";
+        const candidate = candidatesList.find(
+          (c) => c.eventTicker.toLowerCase() === marketId.toLowerCase()
+        );
+        
+        return {
+          eventTicker: marketId,
+          kalshiId: marketId,
+          title: candidate ? candidate.title : (rec.title || marketId),
+          subtitle: candidate ? candidate.subtitle : "",
+          category: rec.primary_topic || (candidate ? candidate.category : "uncategorized"),
+          matchReason: Array.isArray(rec.reasoning) ? rec.reasoning.join(" ") : rec.reasoning || rec.matchReason || "",
+          recommendationScore: rec.recommendation_score || 1.0,
+          similar_markets: candidate ? candidate.similar_markets : [],
+        };
+      });
+      
+      mappedResponse = JSON.stringify(mappedList);
+    }
+  } catch (err) {
+    console.warn("Failed to map/normalize LLM response:", err.message);
+  }
 
   return {
-    response: llmResponse,
+    response: mappedResponse,
     requestId: requestId.toString(),
     transactionHash: txHash,
     receipts,

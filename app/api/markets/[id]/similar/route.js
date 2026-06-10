@@ -32,10 +32,16 @@ export async function GET(request, { params }) {
       );
     }
 
-    // Verify market exists
-    const market = await prisma.market.findUnique({
+    // Verify market exists by database ID or Kalshi ID
+    let market = await prisma.market.findUnique({
       where: { id: marketId },
     });
+
+    if (!market) {
+      market = await prisma.market.findUnique({
+        where: { kalshiId: marketId },
+      });
+    }
 
     if (!market) {
       return NextResponse.json(
@@ -44,12 +50,14 @@ export async function GET(request, { params }) {
       );
     }
 
-    // Find similar markets (bidirectional)
+    const dbMarketId = market.id;
+
+    // Find similar markets (bidirectional) using the database UUID
     const similarRelations = await prisma.similarMarket.findMany({
       where: {
         OR: [
-          { marketIId: marketId },
-          { marketJId: marketId },
+          { marketIId: dbMarketId },
+          { marketJId: dbMarketId },
         ],
       },
       include: {
@@ -69,7 +77,7 @@ export async function GET(request, { params }) {
         rationale: rel.rationale,
       },
       market:
-        rel.marketIId === marketId
+        rel.marketIId === dbMarketId
           ? rel.marketJ
           : rel.marketI,
     }));

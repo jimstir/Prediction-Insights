@@ -1,46 +1,85 @@
-/** SomniaAgents platform contract ABI for createRequest and events */
+/** SomniaAgents platform contract ABI matching official documentation examples */
 export const SOMNIA_AGENTS_PLATFORM_ABI = [
   {
     type: "function",
     name: "createRequest",
     inputs: [
-      { name: "agentId", type: "uint256" },
-      { name: "encodedPayload", type: "bytes" },
-      { name: "callbackSelector", type: "bytes4" },
+      { type: "uint256", name: "agentId" },
+      { type: "address", name: "callbackAddress" },
+      { type: "bytes4", name: "callbackSelector" },
+      { type: "bytes", name: "payload" }
     ],
-    outputs: [{ name: "requestId", type: "uint256" }],
-    stateMutability: "payable",
+    outputs: [{ type: "uint256", name: "requestId" }],
+    stateMutability: "payable"
+  },
+  {
+    type: "function",
+    name: "getRequestDeposit",
+    inputs: [],
+    outputs: [{ type: "uint256", name: "" }],
+    stateMutability: "view"
+  },
+  {
+    type: "function",
+    name: "getRequest",
+    inputs: [{ type: "uint256", name: "requestId" }],
+    outputs: [
+      {
+        type: "tuple",
+        components: [
+          { type: "uint256", name: "id" },
+          { type: "address", name: "requester" },
+          { type: "address", name: "callbackAddress" },
+          { type: "bytes4", name: "callbackSelector" },
+          { type: "address[]", name: "subcommittee" },
+          {
+            type: "tuple[]",
+            name: "responses",
+            components: [
+              { type: "address", name: "validator" },
+              { type: "bytes", name: "result" },
+              { type: "uint8", name: "status" },
+              { type: "uint256", name: "receipt" },
+              { type: "uint256", name: "timestamp" },
+              { type: "uint256", name: "executionCost" }
+            ]
+          },
+          { type: "uint256", name: "responseCount" },
+          { type: "uint256", name: "failureCount" },
+          { type: "uint256", name: "threshold" },
+          { type: "uint256", name: "createdAt" },
+          { type: "uint256", name: "deadline" },
+          { type: "uint8", name: "status" },
+          { type: "uint8", name: "consensusType" },
+          { type: "uint256", name: "remainingBudget" },
+          { type: "uint256", name: "perAgentBudget" }
+        ]
+      }
+    ],
+    stateMutability: "view"
   },
   {
     type: "event",
     name: "RequestCreated",
     inputs: [
-      { name: "requestId", type: "uint256", indexed: true },
-      { name: "requester", type: "address", indexed: true },
-      { name: "agentId", type: "uint256", indexed: false },
-      { name: "callbackSelector", type: "bytes4", indexed: false },
-      { name: "subcommitteeSize", type: "uint256", indexed: false },
-      { name: "threshold", type: "uint256", indexed: false },
-      { name: "deadline", type: "uint256", indexed: false },
-      { name: "perAgentBudget", type: "uint256", indexed: false },
-    ],
+      { type: "uint256", name: "requestId", indexed: true },
+      { type: "uint256", name: "agentId", indexed: true },
+      { type: "uint256", name: "perAgentBudget", indexed: false },
+      { type: "bytes", name: "payload", indexed: false },
+      { type: "address[]", name: "subcommittee", indexed: false }
+    ]
   },
   {
     type: "event",
     name: "RequestFinalized",
     inputs: [
-      { name: "requestId", type: "uint256", indexed: true },
-      { name: "status", type: "uint8", indexed: false },
-      { name: "consensusValue", type: "bytes", indexed: false },
-    ],
+      { type: "uint256", name: "requestId", indexed: true },
+      { type: "uint8", name: "status", indexed: false }
+    ]
   },
   {
-    type: "event",
-    name: "CallbackExecuted",
-    inputs: [
-      { name: "requestId", type: "uint256", indexed: true },
-      { name: "target", type: "address", indexed: true },
-      { name: "success", type: "bool", indexed: false },
-    ],
-  },
+    type: "error",
+    name: "RequestNotFound",
+    inputs: [{ name: "requestId", type: "uint256" }]
+  }
 ];

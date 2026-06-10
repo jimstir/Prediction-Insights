@@ -51,14 +51,35 @@ export default function SimilarMarketsModal({ isOpen, onClose, market, similarMa
                     )}
                   </div>
 
-                  <a
-                    href={item.market.kalshiUrl || `https://kalshi.com/markets/${item.market.kalshiId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn-view-market"
-                  >
-                    View Market →
-                  </a>
+                  {(() => {
+                    const ticker = (item.market.kalshiId || "").toLowerCase();
+                    const seriesTicker = ticker.split("-")[0];
+                    
+                    let slug = "event";
+                    if (item.market.title) {
+                      let cleanTitle = item.market.title;
+                      cleanTitle = cleanTitle.replace(/^(will\s+someone\s+be\s+the|will\s+there\s+be\s+a|will\s+the|will\s+a|will)/i, "");
+                      cleanTitle = cleanTitle.replace(/\?+$/, "");
+                      slug = cleanTitle
+                        .toLowerCase()
+                        .trim()
+                        .replace(/[^a-z0-9]+/g, "-")
+                        .replace(/^-+|-+$/g, "");
+                      if (!slug) slug = "event";
+                    }
+                    
+                    const url = item.market.kalshiUrl || `https://kalshi.com/markets/${seriesTicker}/${slug}/${ticker}?op_market_ticker=${ticker.toUpperCase()}-FSHA`;
+                    return (
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-view-market"
+                      >
+                        View Market →
+                      </a>
+                    );
+                  })()}
                 </div>
               ))}
             </div>

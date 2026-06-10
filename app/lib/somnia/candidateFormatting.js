@@ -16,8 +16,19 @@ import { fetchKalshiCandidateEvents } from "../kalshi";
  */
 export async function getCandidateEventsForRecommendations(options = {}) {
   try {
-    const candidates = await fetchKalshiCandidateEvents(options);
-    return candidates;
+    if (typeof window !== "undefined") {
+      // Browser environment: fetch via Next.js server proxy API to avoid CORS/mixed-content blocks
+      const limit = options.limit ?? 200;
+      const res = await fetch(`/api/insights/candidates?limit=${limit}`);
+      if (!res.ok) {
+        throw new Error(`Failed to fetch candidates from server proxy: ${res.statusText}`);
+      }
+      return await res.json();
+    } else {
+      // Server environment (or CLI/test runner): fetch directly from Kalshi
+      const candidates = await fetchKalshiCandidateEvents(options);
+      return candidates;
+    }
   } catch (error) {
     console.error("Failed to get candidate events:", error);
     throw error;
@@ -27,18 +38,41 @@ export async function getCandidateEventsForRecommendations(options = {}) {
 /**
  * Format candidate events and user preferences for LLM input
  *
- * This prepares a structured prompt context that includes:
- * - User preferences (categories, tags, timeframes, liquidity preferences)
- * - Candidate events from Kalshi
- * - Instructions for LLM to filter and rank events
+ * This prepares a structured prompt context that matches the schema in agent/recommendation.md:
+ * - User Profile (explicit_interests, topic_profiles, market_settings)
+ * - Candidate Markets (enriched with similar markets matches)
  *
  * @param {Object} candidates - Candidate events from Kalshi
  * @param {Object} preferences - User preferences from database
  * @returns {Object} Formatted context for LLM
  */
 export function formatCandidatesAndPreferencesForLLM(candidates, preferences) {
-  // Format preferences for readability
-  const formattedPreferences = {
+  // Parse inferred interests (topic profiles)
+  let topicProfiles = {};
+  if (preferences?.inferredInterests) {
+    try {
+      topicProfiles = typeof preferences.inferredInterests === "string"
+        ? JSON.parse(preferences.inferredInterests)
+        : preferences.inferredInterests;
+    } catch (e) {
+      topicProfiles = {};
+    }
+  }
+
+  // Parse market settings
+  let marketSettings = {};
+  if (preferences?.marketSettings) {
+    try {
+      marketSettings = typeof preferences.marketSettings === "string"
+        ? JSON.parse(preferences.marketSettings)
+        : preferences.marketSettings;
+    } catch (e) {
+      marketSettings = {};
+    }
+  }
+
+  // Build explicit interests
+  const explicitInterests = {
     categories: preferences?.categories
       ? preferences.categories.split(",").map((c) => c.trim())
       : [],
@@ -48,23 +82,34 @@ export function formatCandidatesAndPreferencesForLLM(candidates, preferences) {
     tags: preferences?.tags
       ? preferences.tags.split(",").map((c) => c.trim())
       : [],
-    liquidityScale: preferences?.liquidityScale || "all",
     timeframes: preferences?.timeframes
       ? preferences.timeframes.split(",").map((c) => c.trim())
       : [],
+    liquidityScale: preferences?.liquidityScale || "all",
   };
 
-  // Build context object for LLM
-  const context = {
-    userPreferences: formattedPreferences,
-    candidateEvents: candidates.events || [],
+  // Format candidate markets as specified in recommendation.md
+  const formattedCandidates = (candidates.events || []).map((event) => ({
+    id: event.eventTicker,
+    event: event.eventTicker,
+    question: event.title,
+    description: event.subtitle || "",
+    category: event.category || "uncategorized",
+    similar_markets: event.similar_markets || [],
+  }));
+
+  return {
+    userProfile: {
+      explicit_interests: explicitInterests,
+      topic_profiles: topicProfiles,
+      market_settings: marketSettings,
+    },
+    candidateMarkets: formattedCandidates,
     metadata: {
       totalCandidates: candidates.totalEvents || 0,
       retrievedAt: candidates.retrievedAt,
     },
   };
-
-  return context;
 }
 
 /**
@@ -74,37 +119,17 @@ export function formatCandidatesAndPreferencesForLLM(candidates, preferences) {
  * @returns {string} Prompt string for LLM
  */
 export function buildLLMRecommendationPrompt(context) {
-  const { userPreferences, candidateEvents, metadata } = context;
+  const { userProfile, candidateMarkets, metadata } = context;
 
-  let prompt = `You are a recommendation engine for Kalshi prediction markets. Your task is to filter and rank candidate events based on the user's preferences.\n\n`;
-
-  prompt += `## User Preferences\n`;
-  if (userPreferences.categories.length > 0) {
-    prompt += `- Interested Categories: ${userPreferences.categories.join(", ")}\n`;
-  }
-  if (userPreferences.subCategories.length > 0) {
-    prompt += `- Sub-Categories: ${userPreferences.subCategories.join(", ")}\n`;
-  }
-  if (userPreferences.tags.length > 0) {
-    prompt += `- Tags: ${userPreferences.tags.join(", ")}\n`;
-  }
-  if (userPreferences.timeframes.length > 0) {
-    prompt += `- Preferred Timeframes: ${userPreferences.timeframes.join(", ")}\n`;
-  }
-  prompt += `- Liquidity Preference: ${userPreferences.liquidityScale}\n`;
-
-  prompt += `\n## Candidate Events (${metadata.totalCandidates} total)\n`;
-  prompt += `Retrieved at: ${metadata.retrievedAt}\n\n`;
-
+  let prompt = `## User Profile\n`;
   prompt += `\`\`\`json\n`;
-  prompt += JSON.stringify(candidateEvents, null, 2);
+  prompt += JSON.stringify(userProfile, null, 2);
   prompt += `\n\`\`\`\n\n`;
 
-  prompt += `## Task\n`;
-  prompt += `1. Identify events that match the user's preferences\n`;
-  prompt += `2. Consider category, timeframe, and event characteristics\n`;
-  prompt += `3. Return a JSON array of recommended events (or empty array if none match)\n`;
-  prompt += `4. Format: { "eventTicker": "...", "title": "...", "matchReason": "..." }\n`;
+  prompt += `## Candidate Markets (${metadata.totalCandidates} total)\n`;
+  prompt += `\`\`\`json\n`;
+  prompt += JSON.stringify(candidateMarkets, null, 2);
+  prompt += `\n\`\`\`\n\n`;
 
   return prompt;
 }

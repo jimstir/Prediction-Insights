@@ -163,6 +163,26 @@ export default function SettingsModal({
             {saveError && <p className="form-error">{saveError}</p>}
 
             <button
+              type="button"
+              className="w-full"
+              onClick={() => window.location.href = "/test-connection"}
+              style={{
+                marginTop: "12px",
+                background: "rgba(157, 78, 221, 0.15)",
+                color: "#c084fc",
+                border: "1px solid rgba(157, 78, 221, 0.45)",
+                padding: "12px",
+                borderRadius: "8px",
+                fontWeight: "700",
+                cursor: "pointer",
+                fontSize: "14px",
+                textAlign: "center"
+              }}
+            >
+              Test Somnia Connection
+            </button>
+
+            <button
               type="submit"
               className="btn-primary w-full save-btn"
               disabled={isSaving || !walletAddress}

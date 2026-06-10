@@ -58,7 +58,7 @@ export async function POST(request) {
     }
 
     // Get or create preference for this wallet
-    let preference = await prisma.preference.findUnique({
+    let preference = await prisma.preference.findFirst({
       where: { wallet: { address: normalizedAddress } },
     });
 
@@ -172,7 +172,7 @@ export async function GET(request) {
     }
 
     // Get preference
-    const preference = await prisma.preference.findUnique({
+    const preference = await prisma.preference.findFirst({
       where: { wallet: { address: normalizedAddress } },
     });
 

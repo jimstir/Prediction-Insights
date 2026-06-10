@@ -22,7 +22,7 @@ import {
  */
 export async function buildRecommendationsInferenceInputs(context = {}) {
   const preferences = context.preferences || {};
-  const candidateLimit = context.candidateLimit ?? 200;
+  const candidateLimit = context.candidateLimit ?? 30;
 
   let candidates = null;
   let candidateError = null;
@@ -53,11 +53,36 @@ export async function buildRecommendationsInferenceInputs(context = {}) {
     prompt,
     system:
       context.system ??
-      "You are a Kalshi prediction market recommendation assistant. Analyze the candidate events and user preferences. Recommend markets that match the user's interests. Return a JSON array of recommendations with eventTicker, title, and matchReason.",
+      `You are a prediction market recommendation agent responsible for ranking prediction markets for a user.
+Your objective is to identify markets that best align with the user's demonstrated interests and predictive strengths.
+
+Ranking Workflow:
+Step 1: Identify the user's dominant topics. Dominant topics are those with the highest combination of: explicit interest, interest score, and skill score.
+Step 2: Evaluate each candidate market. Consider: topic alignment, category alignment, user market preferences, market type preferences, and historical user strengths.
+Step 3: Rank markets. Prefer: high-interest topics, high-skill topics, and markets matching user preferences.
+Step 4: Promote diversity. When recommendation quality is similar, diversify across related interests rather than recommending only a single topic.
+
+Output Requirements:
+Return only valid JSON. Do not include markdown. Do not include explanatory text outside the response schema.
+
+Output schema:
+{
+    "recommendations": [
+        {
+            "market_id": "string", // Match candidate's event ticker (id/event)
+            "recommendation_score": 0.0, // Float score from 0.0 to 1.0
+            "primary_topic": "string", // Topic name/category
+            "reasoning": [
+                "string" // List of reasons matching the profile strengths/interests
+            ]
+        }
+    ]
+}`,
     chainOfThought: context.chainOfThought ?? false,
     allowedValues: context.allowedValues ?? [],
     _meta: {
       candidatesFetched: candidates?.totalEvents ?? 0,
+      candidatesList: candidates?.events ?? [],
       candidateError,
       preferencesProvided: Boolean(preferences),
     },
@@ -71,7 +96,7 @@ export async function buildRecommendationsInferenceInputs(context = {}) {
  * @see https://docs.somnia.network/agents/base-agents/llm-inference#simple-inference
  */
 export async function buildRecommendationsInferenceCalldata(context = {}) {
-  const { prompt, system, chainOfThought, allowedValues } =
+  const { prompt, system, chainOfThought, allowedValues, _meta } =
     await buildRecommendationsInferenceInputs(context);
 
   // Encode the LLM agent call (this becomes the payload for platform contract)
@@ -88,5 +113,6 @@ export async function buildRecommendationsInferenceCalldata(context = {}) {
   return {
     encodedPayload,
     callbackSelector,
+    _meta,
   };
 }

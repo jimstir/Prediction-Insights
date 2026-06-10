@@ -105,9 +105,21 @@ export default function RecommendationsWidget({
           market,
           similarMarkets: data.similarMarkets || [],
         });
+      } else {
+        // Fallback: open modal with empty list if market is not in DB yet
+        setSimilarMarketsModal({
+          isOpen: true,
+          market,
+          similarMarkets: [],
+        });
       }
     } catch (error) {
       console.error("Failed to fetch similar markets:", error);
+      setSimilarMarketsModal({
+        isOpen: true,
+        market,
+        similarMarkets: [],
+      });
     } finally {
       setLoadingSimilar(false);
     }
@@ -316,7 +328,15 @@ export default function RecommendationsWidget({
           <div className="inference-banner error">{updateError}</div>
         )}
 
-        {recommendations.length === 0 ? (
+        {isUpdating ? (
+          <div className="recommendations-loading">
+            <div className="spinner-glow"></div>
+            <p className="loading-title">Generating Recommendation Insights...</p>
+            <p className="loading-subtitle">
+              Invoking LLM agent and waiting for on-chain consensus. This will take about 10-15 seconds.
+            </p>
+          </div>
+        ) : recommendations.length === 0 ? (
           <div className="recommendations-empty">
             <div className="glow-circle"></div>
             <p className="placeholder-title">Tailored Insights Coming Soon</p>
@@ -456,6 +476,52 @@ export default function RecommendationsWidget({
           display: flex;
           flex-direction: column;
           gap: 16px;
+        }
+
+        .recommendations-loading {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: 60px 20px;
+          text-align: center;
+          min-height: 280px;
+        }
+
+        .spinner-glow {
+          width: 50px;
+          height: 50px;
+          border: 3px solid rgba(157, 78, 221, 0.1);
+          border-radius: 50%;
+          border-top-color: #c084fc;
+          border-right-color: var(--accent-cyan);
+          animation: spin 1s linear infinite;
+          margin-bottom: 20px;
+          box-shadow: 0 0 15px rgba(157, 78, 221, 0.2);
+        }
+
+        @keyframes spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+
+        .loading-title {
+          font-size: 16px;
+          font-weight: 700;
+          color: var(--text-primary);
+          margin: 0 0 8px 0;
+          background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+        }
+
+        .loading-subtitle {
+          font-size: 13px;
+          color: var(--text-muted);
+          max-width: 400px;
+          margin: 0;
+          line-height: 1.5;
         }
 
         .recommendations-empty {

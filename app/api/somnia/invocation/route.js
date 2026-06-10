@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getPrisma } from "../../../lib/prisma";
+import { updateMarketSimilarities } from "../../../lib/somnia/similarity";
 
 /**
  * POST /api/somnia/invocation
@@ -18,22 +19,84 @@ export async function POST(request) {
     }
 
     const prisma = getPrisma();
+    const normalizedAddress = address.toLowerCase();
 
-    // Check if preference exists for this wallet
+    // Find or create Wallet by address first
+    let wallet = await prisma.wallet.findUnique({
+      where: { address: normalizedAddress },
+    });
+
+    if (!wallet) {
+      wallet = await prisma.wallet.create({
+        data: { address: normalizedAddress },
+      });
+    }
+
+    // Check if preference exists using the Wallet's UUID
     let preference = await prisma.preference.findUnique({
-      where: { walletId: address },
+      where: { walletId: wallet.id },
     });
 
     // Create preference if it doesn't exist
     if (!preference) {
       preference = await prisma.preference.create({
         data: {
-          walletId: address,
+          walletId: wallet.id,
         },
       });
     }
 
-    // Create or update Somnia invocation record
+    // Parse recommended markets from LLM response
+    let parsedRecommendations = [];
+    if (typeof response === "string") {
+      try {
+        const parsed = JSON.parse(response);
+        parsedRecommendations = Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        console.warn("Could not parse LLM response as JSON in invocation API", e.message);
+      }
+    } else if (Array.isArray(response)) {
+      parsedRecommendations = response;
+    }
+
+    // Seed recommended markets in the Market database table and calculate similarities
+    const seededMarkets = [];
+    for (const rec of parsedRecommendations) {
+      const kalshiId = rec.eventTicker || rec.kalshiId;
+      if (!kalshiId) continue;
+      
+      try {
+        const market = await prisma.market.upsert({
+          where: { kalshiId },
+          update: {
+            title: rec.title || kalshiId,
+            category: rec.category || "uncategorized",
+          },
+          create: {
+            kalshiId,
+            title: rec.title || kalshiId,
+            category: rec.category || "uncategorized",
+            marketType: rec.marketType || "binary",
+            timeHorizonDays: rec.timeHorizonDays || 30,
+            resolutionDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            status: rec.status || "open",
+          },
+        });
+        
+        seededMarkets.push(market);
+      } catch (err) {
+        console.error(`Failed to upsert recommended market ${kalshiId}:`, err.message);
+      }
+    }
+
+    // Run similarity matching in the background
+    if (seededMarkets.length > 0) {
+      Promise.all(
+        seededMarkets.map((m) => updateMarketSimilarities(m))
+      ).catch((err) => console.error("Failed to run similar market updates in background:", err));
+    }
+
+    // Create or update Somnia invocation record using the Wallet's UUID
     const invocation = await prisma.somniaInvocation.upsert({
       where: { requestId },
       update: {
@@ -45,7 +108,7 @@ export async function POST(request) {
         updatedAt: new Date(),
       },
       create: {
-        walletId: address,
+        walletId: wallet.id,
         requestId,
         transactionHash,
         response,
@@ -87,8 +150,20 @@ export async function GET(request) {
 
     const prisma = getPrisma();
 
+    const wallet = await prisma.wallet.findUnique({
+      where: { address: address.toLowerCase() },
+    });
+
+    if (!wallet) {
+      return NextResponse.json({
+        success: true,
+        invocations: [],
+        count: 0,
+      });
+    }
+
     const invocations = await prisma.somniaInvocation.findMany({
-      where: { walletId: address },
+      where: { walletId: wallet.id },
       orderBy: { createdAt: "desc" },
       take: 50, // Limit to last 50 invocations
     });
