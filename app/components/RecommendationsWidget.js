@@ -35,6 +35,8 @@ export default function RecommendationsWidget({
   const [loadingFavorites, setLoadingFavorites] = useState(false);
   const [loadingSimilar, setLoadingSimilar] = useState(false);
   const [isLoadingSaved, setIsLoadingSaved] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState(null);
   const prevCountRef = useRef(0);
 
   // Fetch user favorites and load saved recommendations on mount or wallet change
@@ -52,7 +54,10 @@ export default function RecommendationsWidget({
       if (!res.ok) return;
 
       const data = await res.json();
-      if (!data.invocations || data.invocations.length === 0) return;
+      if (!data.invocations || data.invocations.length === 0) {
+        setNextCursor(null);
+        return;
+      }
 
       // Use the most recent completed invocation
       const latest = data.invocations.find((inv) => inv.status === "completed");
@@ -92,6 +97,11 @@ export default function RecommendationsWidget({
 
       setRecommendations(markets);
       setExpanded(true);
+      // Try to recover cursor if stored, but we might not have it in the db payload.
+      // We could add it, but for now we just load the items.
+      if (latest.receipts && Array.isArray(latest.receipts) && latest.receipts[0]?.nextCursor) {
+        setNextCursor(latest.receipts[0].nextCursor);
+      }
       console.log(`Loaded ${markets.length} saved recommendations from previous session`);
 
       // Also load profile scores
@@ -118,6 +128,22 @@ export default function RecommendationsWidget({
     }
     prevCountRef.current = recommendations.length;
   }, [recommendations.length]);
+
+  const handleClear = async () => {
+    if (!walletAddress) return;
+    try {
+      await fetch(`/api/somnia/invocation?address=${walletAddress}`, {
+        method: "DELETE",
+      });
+      setRecommendations([]);
+      setChildRecommendations({});
+      setCandidatesListState([]);
+      setProfileScores(null);
+      setNextCursor(null);
+    } catch (e) {
+      console.error("Failed to clear recommendations:", e);
+    }
+  };
 
   const fetchUserFavorites = async () => {
     try {
@@ -231,10 +257,13 @@ export default function RecommendationsWidget({
     }
   };
 
-  const handleUpdate = async () => {
+  const handleUpdate = async (isLoadMore = false) => {
     setUpdateError("");
-    setRecommendations([]);
-    setProfileScores(null);
+    
+    if (!isLoadMore) {
+      setRecommendations([]);
+      setProfileScores(null);
+    }
 
     if (!walletAddress) {
       onConnectClick?.();
@@ -254,17 +283,22 @@ export default function RecommendationsWidget({
     }
 
     setIsUpdating(true);
+    setIsLoadingMore(isLoadMore);
     try {
       const result = await runSomniaRecommendationsInference({
         walletAddress,
         preferences,
+        cursor: isLoadMore ? nextCursor : undefined,
       });
 
-      // New response format includes: { response, requestId, transactionHash, receipts }
+      // New response format includes: { response, requestId, transactionHash, receipts, nextCursor }
       const llmResponse = result.response;
       const requestId = result.requestId;
       const transactionHash = result.transactionHash;
       const receipts = result.receipts;
+      const newNextCursor = result.nextCursor;
+      
+      setNextCursor(newNextCursor);
 
       console.log("Somnia inference completed:", {
         requestId,
@@ -302,12 +336,19 @@ export default function RecommendationsWidget({
       }));
 
       // Group/deduplicate markets based on candidates similarity mappings
-      const candidatesList = result.candidatesList || [];
-      setCandidatesListState(candidatesList);
+      const newCandidatesList = result.candidatesList || [];
+      const combinedCandidatesList = isLoadMore 
+        ? [...candidatesListState, ...newCandidatesList]
+        : newCandidatesList;
+        
+      setCandidatesListState(combinedCandidatesList);
 
-      const processedRecommendationsList = [];
-      const childRecsMapping = {}; // parentId -> array of child market items
+      const processedRecommendationsList = isLoadMore ? [...recommendations] : [];
+      const childRecsMapping = isLoadMore ? { ...childRecommendations } : {}; // parentId -> array of child market items
       const groupedAsChild = new Set();
+      
+      // Keep track of what we already have if loading more
+      const existingIds = new Set(processedRecommendationsList.map(r => r.id.toLowerCase()));
 
       // Sort by recommendation score descending
       const sortedRecs = [...rawMarkets].sort((a, b) => b.recommendationScore - a.recommendationScore);
@@ -315,9 +356,10 @@ export default function RecommendationsWidget({
       for (let i = 0; i < sortedRecs.length; i++) {
         const rec = sortedRecs[i];
         if (groupedAsChild.has(rec.id.toLowerCase())) continue;
+        if (isLoadMore && existingIds.has(rec.id.toLowerCase())) continue;
 
         // Find this candidate in the candidate list
-        const candidate = candidatesList.find(
+        const candidate = combinedCandidatesList.find(
           (c) => c.eventTicker.toLowerCase() === rec.id.toLowerCase()
         );
 
@@ -351,8 +393,13 @@ export default function RecommendationsWidget({
       setExpanded(true);
 
       // Save invocation response and receipts to database
+      // If we are loading more, we save the COMBINED list as the new response so it grows in the database
       if (walletAddress && requestId) {
         try {
+          const receiptsWithMeta = receipts ? [...receipts] : [];
+          if (receiptsWithMeta.length === 0) receiptsWithMeta.push({});
+          receiptsWithMeta[0].nextCursor = newNextCursor; // store cursor for next time
+
           const saveRes = await fetch("/api/somnia/invocation", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -360,8 +407,8 @@ export default function RecommendationsWidget({
               address: walletAddress,
               requestId,
               transactionHash,
-              response: llmResponse,
-              receipts,
+              response: JSON.stringify(markets), // Use combined markets, not just the raw LLM response
+              receipts: receiptsWithMeta,
               recommendationCount: markets.length,
             }),
           });
@@ -418,13 +465,16 @@ export default function RecommendationsWidget({
       }
     } catch (err) {
       console.error("Somnia LLM inference failed:", err);
-      setUpdateError(
-        formatWalletError(err) ||
-          err?.message ||
-          "Failed to run Somnia LLM inference. Try again."
-      );
+      const errorMsg = formatWalletError(err) || err?.message || "Failed to run Somnia LLM inference. Try again.";
+      
+      // Ignore user rejected transaction errors
+      const lowerError = errorMsg.toLowerCase();
+      if (!lowerError.includes("user rejected") && !lowerError.includes("user denied")) {
+        setUpdateError(errorMsg);
+      }
     } finally {
       setIsUpdating(false);
+      setIsLoadingMore(false);
     }
   };
 
@@ -444,19 +494,31 @@ export default function RecommendationsWidget({
           </svg>
           Recommendations
         </div>
-        <button
-          type="button"
-          className="btn-update"
-          onClick={handleUpdate}
-          disabled={isUpdating}
-          title={
-            canSignSomniaTransactions(walletMode)
-              ? `Sign on ${txSummary.chainName} (chain ${txSummary.chainId}) — deposit ${txSummary.depositEth} ${txSummary.currency}`
-              : "Connect with MetaMask to sign Somnia LLM transactions"
-          }
-        >
-          {isUpdating ? "Signing…" : "Update"}
-        </button>
+        <div className="header-actions">
+          {recommendations.length > 0 && (
+            <button
+              type="button"
+              className="btn-clear"
+              onClick={handleClear}
+              disabled={isUpdating}
+            >
+              Clear
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn-update"
+            onClick={() => handleUpdate(false)}
+            disabled={isUpdating}
+            title={
+              canSignSomniaTransactions(walletMode)
+                ? `Sign on ${txSummary.chainName} (chain ${txSummary.chainId}) — deposit ${txSummary.depositEth} ${txSummary.currency}`
+                : "Connect with MetaMask to sign Somnia LLM transactions"
+            }
+          >
+            {isUpdating ? "Signing…" : "Update"}
+          </button>
+        </div>
       </div>
 
       <div className="widget-content recommendations-container">
@@ -481,7 +543,7 @@ export default function RecommendationsWidget({
           <div className="inference-banner error">{updateError}</div>
         )}
 
-        {isUpdating ? (
+        {isUpdating && !isLoadingMore ? (
           <div className="recommendations-loading">
             <div className="spinner-glow"></div>
             <p className="loading-title">Generating Recommendation Insights...</p>
@@ -562,6 +624,23 @@ export default function RecommendationsWidget({
               <span className="recommendation-count">
                 {recommendations.length} Market{recommendations.length !== 1 ? "s" : ""} Recommended
               </span>
+              
+              {isLoadingMore ? (
+                <div className="load-more-spinner">
+                  <div className="spinner-glow small-spinner"></div>
+                  <span>Loading more...</span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="btn-load-more"
+                  onClick={() => handleUpdate(true)}
+                  disabled={isUpdating || !nextCursor}
+                  title={!nextCursor ? "Click Update first to start paginating from the latest markets" : "Load more markets"}
+                >
+                  Load More
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -577,10 +656,12 @@ export default function RecommendationsWidget({
       </div>
 
       <style jsx>{`
-        .btn-update {
-          background: rgba(157, 78, 221, 0.15);
-          color: #c084fc;
-          border: 1px solid rgba(157, 78, 221, 0.45);
+        .header-actions {
+          display: flex;
+          gap: 8px;
+        }
+
+        .btn-update, .btn-clear {
           padding: 6px 14px;
           border-radius: 8px;
           font-size: 12px;
@@ -591,13 +672,31 @@ export default function RecommendationsWidget({
           white-space: nowrap;
         }
 
+        .btn-update {
+          background: rgba(157, 78, 221, 0.15);
+          color: #c084fc;
+          border: 1px solid rgba(157, 78, 221, 0.45);
+        }
+
         .btn-update:hover:not(:disabled) {
           background: rgba(157, 78, 221, 0.28);
           border-color: #c084fc;
           box-shadow: 0 0 12px rgba(157, 78, 221, 0.25);
         }
 
-        .btn-update:disabled {
+        .btn-clear {
+          background: rgba(255, 51, 102, 0.1);
+          color: #ff3366;
+          border: 1px solid rgba(255, 51, 102, 0.3);
+        }
+
+        .btn-clear:hover:not(:disabled) {
+          background: rgba(255, 51, 102, 0.2);
+          border-color: #ff3366;
+          box-shadow: 0 0 12px rgba(255, 51, 102, 0.2);
+        }
+
+        .btn-update:disabled, .btn-clear:disabled {
           opacity: 0.6;
           cursor: wait;
         }
@@ -659,6 +758,14 @@ export default function RecommendationsWidget({
           animation: spin 1s linear infinite;
           margin-bottom: 20px;
           box-shadow: 0 0 15px rgba(157, 78, 221, 0.2);
+        }
+
+        .spinner-glow.small-spinner {
+          width: 20px;
+          height: 20px;
+          border-width: 2px;
+          margin-bottom: 0;
+          box-shadow: 0 0 8px rgba(157, 78, 221, 0.2);
         }
 
         @keyframes spin {
@@ -857,9 +964,43 @@ export default function RecommendationsWidget({
 
         .recommendations-footer {
           display: flex;
-          justify-content: center;
-          padding: 8px 0;
+          justify-content: space-between;
+          align-items: center;
+          padding: 12px 0 4px 0;
           border-top: 1px solid var(--border-color);
+        }
+
+        .load-more-spinner {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          color: #00f2fe;
+          font-size: 13px;
+          font-weight: 600;
+          padding: 4px 8px;
+        }
+
+        .btn-load-more {
+          background: rgba(0, 242, 254, 0.1);
+          color: #00f2fe;
+          border: 1px solid rgba(0, 242, 254, 0.3);
+          padding: 6px 16px;
+          border-radius: 8px;
+          font-size: 12px;
+          font-weight: 700;
+          cursor: pointer;
+          transition: var(--transition-smooth);
+        }
+
+        .btn-load-more:hover:not(:disabled) {
+          background: rgba(0, 242, 254, 0.2);
+          border-color: #00f2fe;
+          box-shadow: 0 0 12px rgba(0, 242, 254, 0.2);
+        }
+
+        .btn-load-more:disabled {
+          opacity: 0.5;
+          cursor: wait;
         }
 
         .recommendation-count {

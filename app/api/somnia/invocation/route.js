@@ -181,3 +181,49 @@ export async function GET(request) {
     );
   }
 }
+
+/**
+ * DELETE /api/somnia/invocation
+ * Deletes all Somnia invocations for a wallet
+ */
+export async function DELETE(request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const address = searchParams.get("address");
+
+    if (!address) {
+      return NextResponse.json(
+        { error: "Missing required parameter: address" },
+        { status: 400 }
+      );
+    }
+
+    const prisma = getPrisma();
+
+    const wallet = await prisma.wallet.findUnique({
+      where: { address: address.toLowerCase() },
+    });
+
+    if (!wallet) {
+      return NextResponse.json({
+        success: true,
+        count: 0,
+      });
+    }
+
+    const deleteResult = await prisma.somniaInvocation.deleteMany({
+      where: { walletId: wallet.id },
+    });
+
+    return NextResponse.json({
+      success: true,
+      count: deleteResult.count,
+    });
+  } catch (error) {
+    console.error("Error deleting Somnia invocations:", error);
+    return NextResponse.json(
+      { error: "Failed to delete invocations", message: error.message },
+      { status: 500 }
+    );
+  }
+}

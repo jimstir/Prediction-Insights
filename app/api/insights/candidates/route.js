@@ -19,6 +19,7 @@ export async function GET(request) {
     // Parse query parameters
     const searchParams = request.nextUrl.searchParams;
     const limit = searchParams.get("limit");
+    const cursor = searchParams.get("cursor");
 
     // Validate limit if provided
     const options = {};
@@ -33,6 +34,9 @@ export async function GET(request) {
         );
       }
       options.limit = parsedLimit;
+    }
+    if (cursor) {
+      options.cursor = cursor;
     }
 
     // Fetch candidate events from Kalshi

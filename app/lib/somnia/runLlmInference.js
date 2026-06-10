@@ -443,5 +443,6 @@ export async function runSomniaRecommendationsInference(context = {}) {
     transactionHash: txHash,
     receipts,
     candidatesList: _meta?.candidatesList || [],
+    nextCursor: _meta?.nextCursor || null,
   };
 }

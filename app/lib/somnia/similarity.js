@@ -1,10 +1,13 @@
 import { OpenAI } from "openai";
 import { getPrisma } from "../prisma";
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || "",
-});
+// Initialize OpenAI client conditionally
+let openai = null;
+if (process.env.OPENAI_API_KEY) {
+  openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+}
 
 /**
  * Generate vector embedding using OpenAI text-embedding-3-small
@@ -12,8 +15,8 @@ const openai = new OpenAI({
  * @returns {Promise<number[]>} Array of floats representing the embedding vector
  */
 export async function generateOpenAIEmbedding(text) {
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error("OPENAI_API_KEY is not defined in environment variables");
+  if (!openai) {
+    throw new Error("OpenAI client is not initialized (missing API key)");
   }
 
   const response = await openai.embeddings.create({
@@ -94,6 +97,11 @@ export async function ensureMarketEmbedding(market, prisma) {
  * @param {number} [threshold=0.4] Minimum similarity score to record relationship
  */
 export async function updateMarketSimilarities(targetMarket, threshold = 0.4) {
+  if (!openai) {
+    console.warn("Skipping similarity calculations: OPENAI_API_KEY is not defined");
+    return;
+  }
+
   const prisma = getPrisma();
   
   try {

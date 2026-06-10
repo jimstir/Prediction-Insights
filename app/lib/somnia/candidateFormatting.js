@@ -19,7 +19,11 @@ export async function getCandidateEventsForRecommendations(options = {}) {
     if (typeof window !== "undefined") {
       // Browser environment: fetch via Next.js server proxy API to avoid CORS/mixed-content blocks
       const limit = options.limit ?? 200;
-      const res = await fetch(`/api/insights/candidates?limit=${limit}`);
+      let url = `/api/insights/candidates?limit=${limit}`;
+      if (options.cursor) {
+        url += `&cursor=${options.cursor}`;
+      }
+      const res = await fetch(url);
       if (!res.ok) {
         throw new Error(`Failed to fetch candidates from server proxy: ${res.statusText}`);
       }

@@ -41,11 +41,12 @@ const KALSHI_API_KEY = process.env.KALSHI_API_KEY || "";
  *
  * @param {Object} options - Fetch options
  * @param {number} [options.limit=200] - Maximum events to retrieve
+ * @param {string} [options.cursor] - Pagination cursor for getting next set of events
  * @returns {Promise<CandidateEventResponse>} Normalized events response
  * @throws {Error} On network, timeout, or parsing errors (never swallows errors)
  */
 export async function fetchKalshiCandidateEvents(options = {}) {
-  const { limit = DEFAULT_LIMIT } = options;
+  const { limit = DEFAULT_LIMIT, cursor } = options;
 
   // Validate inputs
   if (typeof limit !== "number" || limit < 1 || limit > 200) {
@@ -56,6 +57,9 @@ export async function fetchKalshiCandidateEvents(options = {}) {
 
   const url = new URL(KALSHI_EVENTS_ENDPOINT, KALSHI_API_BASE);
   url.searchParams.append("limit", limit.toString());
+  if (cursor) {
+    url.searchParams.append("cursor", cursor);
+  }
 
   let response;
   let rawData;
@@ -124,6 +128,7 @@ export async function fetchKalshiCandidateEvents(options = {}) {
         retrievedAt: new Date().toISOString(),
         totalEvents: 0,
         events: [],
+        cursor: rawData.cursor || null,
       };
     }
 
@@ -136,6 +141,7 @@ export async function fetchKalshiCandidateEvents(options = {}) {
       retrievedAt: new Date().toISOString(),
       totalEvents: normalizedEvents.length,
       events: normalizedEvents,
+      cursor: rawData.cursor || null,
     };
   } catch (error) {
     // Handle abort (timeout)

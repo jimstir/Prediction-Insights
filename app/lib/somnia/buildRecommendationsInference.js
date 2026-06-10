@@ -23,6 +23,7 @@ import {
 export async function buildRecommendationsInferenceInputs(context = {}) {
   const preferences = context.preferences || {};
   const candidateLimit = context.candidateLimit ?? 30;
+  const cursor = context.cursor;
 
   let candidates = null;
   let candidateError = null;
@@ -31,6 +32,7 @@ export async function buildRecommendationsInferenceInputs(context = {}) {
     // Fetch candidate events from Kalshi
     candidates = await getCandidateEventsForRecommendations({
       limit: candidateLimit,
+      cursor,
     });
   } catch (error) {
     candidateError = error.message;
@@ -87,6 +89,7 @@ Output schema:
       candidatesList: candidates?.events ?? [],
       candidateError,
       preferencesProvided: Boolean(preferences),
+      nextCursor: candidates?.cursor || null,
     },
   };
 }
