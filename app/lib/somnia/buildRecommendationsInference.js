@@ -59,11 +59,13 @@ Your objective is to identify markets that best align with the user's demonstrat
 Ranking Workflow:
 Step 1: Identify the user's dominant topics. Dominant topics are those with the highest combination of: explicit interest, interest score, and skill score.
 Step 2: Evaluate each candidate market. Consider: topic alignment, category alignment, user market preferences, market type preferences, and historical user strengths.
-Step 3: Rank markets. Prefer: high-interest topics, high-skill topics, and markets matching user preferences.
+Step 3: Rank ALL candidate markets. Assign a recommendation_score (0.0 to 1.0) to EVERY candidate. Order by score descending so the most relevant markets appear first. Prefer: high-interest topics, high-skill topics, and markets matching user preferences.
 Step 4: Promote diversity. When recommendation quality is similar, diversify across related interests rather than recommending only a single topic.
+Step 5: Return ALL markets. You MUST include every single candidate market in the output. Do NOT omit or filter any markets. Lower-relevance markets should still be included with lower recommendation_score values.
 
 Output Requirements:
 Return only valid JSON. Do not include markdown. Do not include explanatory text outside the response schema.
+CRITICAL: You MUST return ALL candidate markets in the recommendations array. Do NOT skip, filter, or omit any candidate. Every candidate market provided in the input must appear exactly once in the output. The output array length must equal the input candidate array length.
 
 Output schema:
 {

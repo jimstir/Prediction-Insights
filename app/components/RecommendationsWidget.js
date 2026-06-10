@@ -22,6 +22,8 @@ export default function RecommendationsWidget({
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateError, setUpdateError] = useState("");
   const [recommendations, setRecommendations] = useState([]);
+  const [childRecommendations, setChildRecommendations] = useState({});
+  const [candidatesListState, setCandidatesListState] = useState([]);
   const [expanded, setExpanded] = useState(false);
   const [favorites, setFavorites] = useState(new Set());
   const [similarMarketsModal, setSimilarMarketsModal] = useState({
@@ -32,14 +34,82 @@ export default function RecommendationsWidget({
   const [profileScores, setProfileScores] = useState(null);
   const [loadingFavorites, setLoadingFavorites] = useState(false);
   const [loadingSimilar, setLoadingSimilar] = useState(false);
+  const [isLoadingSaved, setIsLoadingSaved] = useState(false);
   const prevCountRef = useRef(0);
 
-  // Fetch user favorites on mount or wallet change
+  // Fetch user favorites and load saved recommendations on mount or wallet change
   useEffect(() => {
     if (walletAddress) {
       fetchUserFavorites();
+      loadSavedRecommendations();
     }
   }, [walletAddress]);
+
+  const loadSavedRecommendations = async () => {
+    setIsLoadingSaved(true);
+    try {
+      const res = await fetch(`/api/somnia/invocation?address=${walletAddress}`);
+      if (!res.ok) return;
+
+      const data = await res.json();
+      if (!data.invocations || data.invocations.length === 0) return;
+
+      // Use the most recent completed invocation
+      const latest = data.invocations.find((inv) => inv.status === "completed");
+      if (!latest || !latest.response) return;
+
+      // Don't overwrite if we already have recommendations loaded
+      if (recommendations.length > 0) return;
+
+      let parsedRecommendations = [];
+      if (typeof latest.response === "string") {
+        try {
+          const parsed = JSON.parse(latest.response);
+          parsedRecommendations = Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+          console.warn("Could not parse saved LLM response as JSON");
+          return;
+        }
+      } else if (Array.isArray(latest.response)) {
+        parsedRecommendations = latest.response;
+      }
+
+      if (parsedRecommendations.length === 0) return;
+
+      const markets = parsedRecommendations.map((rec, idx) => ({
+        id: rec.eventTicker || rec.id || `rec-${idx}`,
+        kalshiId: rec.eventTicker || rec.kalshiId,
+        title: rec.title || rec.eventTicker,
+        subtitle: rec.subtitle,
+        category: rec.category,
+        marketType: rec.marketType || "binary",
+        timeHorizonDays: rec.timeHorizonDays || 30,
+        status: rec.status || "open",
+        kalshiUrl: rec.kalshiUrl,
+        matchReason: rec.matchReason || rec.rationale,
+        recommendationScore: rec.recommendationScore || rec.recommendation_score || 1.0,
+      }));
+
+      setRecommendations(markets);
+      setExpanded(true);
+      console.log(`Loaded ${markets.length} saved recommendations from previous session`);
+
+      // Also load profile scores
+      try {
+        const scoresRes = await fetch(`/api/profile/scores?address=${walletAddress}`);
+        if (scoresRes.ok) {
+          const scoresData = await scoresRes.json();
+          setProfileScores(scoresData.inferred_interests);
+        }
+      } catch (e) {
+        console.warn("Could not fetch profile scores:", e);
+      }
+    } catch (error) {
+      console.warn("Could not load saved recommendations:", error);
+    } finally {
+      setIsLoadingSaved(false);
+    }
+  };
 
   // Expand when new items are added
   useEffect(() => {
@@ -97,22 +167,58 @@ export default function RecommendationsWidget({
   const handleViewSimilarMarkets = async (market) => {
     try {
       setLoadingSimilar(true);
-      const res = await fetch(`/api/markets/${market.id}/similar?limit=10`);
-      if (res.ok) {
-        const data = await res.json();
-        setSimilarMarketsModal({
-          isOpen: true,
-          market,
-          similarMarkets: data.similarMarkets || [],
-        });
-      } else {
-        // Fallback: open modal with empty list if market is not in DB yet
-        setSimilarMarketsModal({
-          isOpen: true,
-          market,
-          similarMarkets: [],
-        });
+      let dbSimilar = [];
+      try {
+        const res = await fetch(`/api/markets/${market.id}/similar?limit=10`);
+        if (res.ok) {
+          const data = await res.json();
+          dbSimilar = data.similarMarkets || [];
+        }
+      } catch (err) {
+        console.warn("Failed to fetch DB similar markets:", err);
       }
+
+      // Get children grouped locally
+      const children = childRecommendations[market.id] || [];
+      
+      // Find candidate info to get correct confidence score if available
+      const candidate = candidatesListState.find(
+        (c) => c.eventTicker.toLowerCase() === market.id.toLowerCase()
+      );
+
+      const childItems = children.map((child) => {
+        const simMatch = candidate?.similar_markets?.find(
+          (sm) => sm.kalshiId.toLowerCase() === child.id.toLowerCase()
+        );
+        
+        return {
+          relation: {
+            id: `child-${child.id}`,
+            confidence: simMatch?.confidence || 0.8,
+            rationale: child.matchReason || `Strong semantic match found between: "${market.title}" and "${child.title}".`,
+            isSameOutcome: (simMatch?.confidence || 0.8) >= 0.75,
+          },
+          market: child,
+        };
+      });
+
+      // Combine and deduplicate by market ID (or kalshiId)
+      const combined = [...childItems];
+      const seenIds = new Set(combined.map((item) => (item.market.kalshiId || item.market.id || "").toLowerCase()));
+
+      for (const item of dbSimilar) {
+        const itemKey = (item.market.kalshiId || item.market.id || "").toLowerCase();
+        if (itemKey && !seenIds.has(itemKey)) {
+          seenIds.add(itemKey);
+          combined.push(item);
+        }
+      }
+
+      setSimilarMarketsModal({
+        isOpen: true,
+        market,
+        similarMarkets: combined,
+      });
     } catch (error) {
       console.error("Failed to fetch similar markets:", error);
       setSimilarMarketsModal({
@@ -181,7 +287,7 @@ export default function RecommendationsWidget({
       }
 
       // Transform recommendations to market format
-      const markets = parsedRecommendations.map((rec, idx) => ({
+      const rawMarkets = parsedRecommendations.map((rec, idx) => ({
         id: rec.eventTicker || rec.id || `rec-${idx}`,
         kalshiId: rec.eventTicker || rec.kalshiId,
         title: rec.title || rec.eventTicker,
@@ -192,9 +298,56 @@ export default function RecommendationsWidget({
         status: rec.status || "open",
         kalshiUrl: rec.kalshiUrl,
         matchReason: rec.matchReason || rec.rationale,
+        recommendationScore: rec.recommendationScore || rec.recommendation_score || 1.0,
       }));
 
-      setRecommendations(markets);
+      // Group/deduplicate markets based on candidates similarity mappings
+      const candidatesList = result.candidatesList || [];
+      setCandidatesListState(candidatesList);
+
+      const processedRecommendationsList = [];
+      const childRecsMapping = {}; // parentId -> array of child market items
+      const groupedAsChild = new Set();
+
+      // Sort by recommendation score descending
+      const sortedRecs = [...rawMarkets].sort((a, b) => b.recommendationScore - a.recommendationScore);
+
+      for (let i = 0; i < sortedRecs.length; i++) {
+        const rec = sortedRecs[i];
+        if (groupedAsChild.has(rec.id.toLowerCase())) continue;
+
+        // Find this candidate in the candidate list
+        const candidate = candidatesList.find(
+          (c) => c.eventTicker.toLowerCase() === rec.id.toLowerCase()
+        );
+
+        const similarMarkets = candidate?.similar_markets || [];
+        const children = [];
+
+        for (let j = i + 1; j < sortedRecs.length; j++) {
+          const otherRec = sortedRecs[j];
+          if (groupedAsChild.has(otherRec.id.toLowerCase())) continue;
+
+          // Check if otherRec is paired as similar in candidate's similar_markets
+          const isSimilar = similarMarkets.some(
+            (sm) => sm.kalshiId.toLowerCase() === otherRec.id.toLowerCase()
+          );
+
+          if (isSimilar) {
+            groupedAsChild.add(otherRec.id.toLowerCase());
+            children.push(otherRec);
+          }
+        }
+
+        processedRecommendationsList.push(rec);
+        if (children.length > 0) {
+          childRecsMapping[rec.id] = children;
+        }
+      }
+
+      setRecommendations(processedRecommendationsList);
+      setChildRecommendations(childRecsMapping);
+      const markets = processedRecommendationsList;
       setExpanded(true);
 
       // Save invocation response and receipts to database
@@ -334,6 +487,14 @@ export default function RecommendationsWidget({
             <p className="loading-title">Generating Recommendation Insights...</p>
             <p className="loading-subtitle">
               Invoking LLM agent and waiting for on-chain consensus. This will take about 10-15 seconds.
+            </p>
+          </div>
+        ) : isLoadingSaved ? (
+          <div className="recommendations-loading">
+            <div className="spinner-glow"></div>
+            <p className="loading-title">Loading Previous Recommendations...</p>
+            <p className="loading-subtitle">
+              Fetching your saved market recommendations from the database.
             </p>
           </div>
         ) : recommendations.length === 0 ? (

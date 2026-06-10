@@ -442,5 +442,6 @@ export async function runSomniaRecommendationsInference(context = {}) {
     requestId: requestId.toString(),
     transactionHash: txHash,
     receipts,
+    candidatesList: _meta?.candidatesList || [],
   };
 }

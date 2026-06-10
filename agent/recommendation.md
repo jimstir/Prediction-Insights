@@ -81,7 +81,9 @@ Consider:
 
 ### Step 3
 
-Rank markets.
+Rank ALL candidate markets.
+
+Assign a recommendation_score (0.0 to 1.0) to EVERY candidate market. Order by score descending so the most relevant markets appear first.
 
 Prefer:
 
@@ -94,6 +96,13 @@ Prefer:
 Promote diversity.
 When recommendation quality is similar,
 diversify across related interests rather than recommending only a single topic.
+
+### Step 5
+
+Return ALL markets.
+You MUST include every single candidate market in the output. Do NOT omit or filter any markets.
+Lower-relevance markets should still be included with lower recommendation_score values.
+The output array must contain exactly as many items as there are candidate markets in the input.
 
 ## Recommendation Principles
 
@@ -114,6 +123,12 @@ Poor recommendations:
 Return only valid JSON.
 Do not include markdown.
 Do not include explanatory text outside the response schema.
+
+CRITICAL: You MUST return ALL candidate markets in the recommendations array.
+Do NOT skip, filter, or omit any candidate. Every candidate market provided in the input
+must appear exactly once in the output. Markets with low relevance should receive a low
+recommendation_score but must still be included. The output array length must equal the
+input candidate array length.
 
 Output schema:
 

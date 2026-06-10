@@ -88,14 +88,13 @@ export function formatCandidatesAndPreferencesForLLM(candidates, preferences) {
     liquidityScale: preferences?.liquidityScale || "all",
   };
 
-  // Format candidate markets as specified in recommendation.md
+  // Format candidate markets as specified in recommendation.md (excluding similar_markets from LLM prompt)
   const formattedCandidates = (candidates.events || []).map((event) => ({
     id: event.eventTicker,
     event: event.eventTicker,
     question: event.title,
     description: event.subtitle || "",
     category: event.category || "uncategorized",
-    similar_markets: event.similar_markets || [],
   }));
 
   return {
