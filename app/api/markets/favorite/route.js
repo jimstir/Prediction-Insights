@@ -52,30 +52,42 @@ export async function POST(request) {
       );
     }
 
-    // Ensure wallet exists
-    const wallet = await prisma.wallet.upsert({
+    // Ensure wallet exists and has a preference
+    let wallet = await prisma.wallet.findUnique({
       where: { address: normalizedAddress },
-      create: { address: normalizedAddress },
-      update: {},
       include: { preferences: true },
     });
 
-    if (!wallet.preferences) {
+    if (!wallet) {
+      wallet = await prisma.wallet.create({
+        data: { 
+          address: normalizedAddress,
+          preferences: { create: {} }
+        },
+        include: { preferences: true }
+      });
+    } else if (!wallet.preferences) {
       await prisma.preference.create({
         data: { walletId: wallet.id },
       });
     }
 
-    // Ensure market exists
-    const market = await prisma.market.findUnique({
-      where: { id: marketId },
+    // Ensure market exists using kalshiId
+    let market = await prisma.market.findUnique({
+      where: { kalshiId: marketId },
     });
 
     if (!market) {
-      return NextResponse.json(
-        { error: "Market not found" },
-        { status: 404 }
-      );
+      // Create a stub market if it wasn't saved during recommendation
+      market = await prisma.market.create({
+        data: {
+          kalshiId: marketId,
+          title: marketId,
+          category: "uncategorized",
+          timeHorizonDays: 30,
+          resolutionDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+        }
+      });
     }
 
     // Handle add/remove
@@ -84,16 +96,39 @@ export async function POST(request) {
       await prisma.marketFavorite.upsert({
         where: {
           walletId_marketId: {
-            walletId: wallet.preferences.walletId,
-            marketId,
+            walletId: wallet.id,
+            marketId: market.id,
           },
         },
         create: {
-          walletId: wallet.preferences.walletId,
-          marketId,
+          walletId: wallet.id,
+          marketId: market.id,
         },
         update: {
           addedAt: new Date(),
+        },
+      });
+
+      // Track engagement to improve profile score
+      await prisma.userEngagement.upsert({
+        where: {
+          walletId_marketId: {
+            walletId: wallet.id,
+            marketId: market.id,
+          },
+        },
+        create: {
+          walletId: wallet.id,
+          marketId: market.id,
+          interactionType: "watchlist",
+          isWatchlisted: true,
+          clickCount: 1,
+        },
+        update: {
+          isWatchlisted: true,
+          interactionType: "watchlist",
+          clickCount: { increment: 1 },
+          lastInteraction: new Date(),
         },
       });
 
@@ -105,8 +140,20 @@ export async function POST(request) {
       // Remove favorite
       await prisma.marketFavorite.deleteMany({
         where: {
-          walletId: wallet.preferences.walletId,
-          marketId,
+          walletId: wallet.id,
+          marketId: market.id,
+        },
+      });
+
+      // Update engagement record
+      await prisma.userEngagement.updateMany({
+        where: {
+          walletId: wallet.id,
+          marketId: market.id,
+        },
+        data: {
+          isWatchlisted: false,
+          lastInteraction: new Date(),
         },
       });
 
